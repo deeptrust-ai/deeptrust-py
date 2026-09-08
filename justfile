@@ -8,6 +8,12 @@ default:
 install:
     uv sync --all-extras --group dev
 
+# A local stand-in for the DeepTrust API on :8080, so the client, the adapters
+# and the examples run with no key and no network. Not the analysis: it matches
+# a handful of patterns, which is enough to see the shapes hold.
+devserver:
+    uv run uvicorn dev.server:app --host 127.0.0.1 --port 8080 --reload
+
 test:
     uv run pytest -q
 

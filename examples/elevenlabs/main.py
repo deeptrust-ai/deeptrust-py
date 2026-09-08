@@ -1,30 +1,104 @@
-"""Watch live ElevenLabs conversations with DeepTrust.
+"""An ElevenLabs voice agent with DeepTrust watching it.
 
-Nothing here runs inside the agent. ElevenLabs exposes a monitor socket per
-conversation, so this connects to it with a workspace API key, reads the
-transcript as it happens, and sends nudges back as contextual updates on the
-same socket. The agent needs no code change at all.
+An ordinary IT service desk agent, and DeepTrust attached from outside. Nothing
+runs inside the agent: ElevenLabs exposes a monitor socket per conversation, so
+this connects with a workspace API key, reads the transcript as it happens, and
+sends nudges back as contextual updates on the same socket.
 
-Two ways to run it:
+    uv run python main.py provision
+        Create or update the agent on your ElevenLabs workspace. Prints the id.
+
+    uv run python main.py talk "I'm locked out, reset my password"
+        Start a conversation, watch it, and send those turns. The transcript,
+        the findings and the nudges all print.
 
     uv run python main.py watch <conversation_id>
-        Watch one conversation that is already running.
+        Watch a conversation somebody else is having, from the dashboard or a
+        phone call.
 
     uv run python main.py serve
-        Run the webhook receiver. Point the ElevenLabs conversation initiation
-        webhook at http://<host>/calls and every inbound call is watched
-        automatically.
+        Point the ElevenLabs conversation initiation webhook at
+        http://<host>/calls and every inbound call is watched automatically.
 """
 
 import asyncio
+import json
 import os
 import sys
 
+import httpx
 from deeptrust.agents import DeepTrust, User
 from deeptrust.agents.elevenlabs import Monitor
 from dotenv import load_dotenv
 
 load_dotenv()
+
+API = "https://api.elevenlabs.io/v1"
+AGENT_NAME = "DeepTrust example · service desk"
+
+INSTRUCTIONS = """
+You are an IT service desk agent for Meridian Industrial Group.
+
+You reset passwords, re-enroll MFA, and unlock accounts. Confirm who the caller
+is before changing anything on an account, and only act on an approved change
+ticket.
+
+Keep replies to one or two sentences. You are on a phone call, so do not read
+out lists and do not explain internal procedure.
+"""
+
+
+def _headers() -> dict[str, str]:
+    return {
+        "xi-api-key": os.environ["ELEVENLABS_API_KEY"],
+        "content-type": "application/json",
+    }
+
+
+def _config() -> dict:
+    return {
+        "name": AGENT_NAME,
+        "conversation_config": {
+            "agent": {
+                "first_message": "IT service desk, how can I help?",
+                "language": "en",
+                "prompt": {"prompt": INSTRUCTIONS, "llm": "gemini-2.0-flash"},
+            },
+            "conversation": {
+                # Without this the monitor socket closes immediately with
+                # 1008 "Monitoring is not enabled for this agent".
+                "monitoring_enabled": True,
+                "client_events": ["audio", "user_transcript", "agent_response"],
+            },
+        },
+    }
+
+
+def provision() -> str:
+    """Create the agent, or update it in place if it already exists."""
+    with httpx.Client(timeout=60) as c:
+        listing = c.get(
+            f"{API}/convai/agents", headers=_headers(), params={"page_size": 100}
+        )
+        listing.raise_for_status()
+        existing = next(
+            (a for a in listing.json().get("agents", []) if a.get("name") == AGENT_NAME),
+            None,
+        )
+        if existing:
+            agent_id = existing["agent_id"]
+            c.patch(
+                f"{API}/convai/agents/{agent_id}", headers=_headers(), json=_config()
+            ).raise_for_status()
+        else:
+            created = c.post(
+                f"{API}/convai/agents/create", headers=_headers(), json=_config()
+            )
+            created.raise_for_status()
+            agent_id = created.json()["agent_id"]
+    print(f"agent {agent_id}", flush=True)
+    print("Put it in .env as ELEVENLABS_AGENT_ID", flush=True)
+    return agent_id
 
 
 def _report(result) -> None:
@@ -59,10 +133,73 @@ async def watch_one(conversation_id: str) -> None:
     monitor = _monitor()
     print(f"watching {conversation_id}", flush=True)
     await monitor.watch(conversation_id, user=User(id="unknown", role="MEMBER"))
-    # watch() returns as soon as the watcher is running, so hold the process
-    # open while it reads the socket.
     while True:
         await asyncio.sleep(1)
+
+
+async def talk(turns: list[str]) -> None:
+    """Hold a text conversation with the agent while DeepTrust watches it.
+
+    Text rather than audio so the example runs in a terminal. The monitor sees
+    the same transcript either way.
+    """
+    import websockets
+
+    agent_id = os.environ["ELEVENLABS_AGENT_ID"]
+    monitor = _monitor()
+    url = f"{API.replace('https', 'wss')}/convai/conversation?agent_id={agent_id}"
+
+    async with websockets.connect(
+        url, additional_headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]}
+    ) as ws:
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "conversation_initiation_client_data",
+                    "conversation_config_override": {
+                        "conversation": {"text_only": True}
+                    },
+                }
+            )
+        )
+        pending = list(turns)
+        async for raw in ws:
+            event = json.loads(raw)
+            kind = event.get("type")
+
+            if kind == "conversation_initiation_metadata":
+                cid = event["conversation_initiation_metadata_event"][
+                    "conversation_id"
+                ]
+                print(f"conversation {cid}", flush=True)
+                await monitor.watch(cid, user=User(id="E-10482", role="MEMBER"))
+                print("DeepTrust attached\n", flush=True)
+                await asyncio.sleep(1)
+            elif kind == "ping":
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "pong",
+                            "event_id": event["ping_event"]["event_id"],
+                        }
+                    )
+                )
+                continue
+            elif kind == "agent_response":
+                reply = event["agent_response_event"]["agent_response"]
+                print(f"AGENT : {reply}", flush=True)
+            else:
+                continue
+
+            if pending:
+                await asyncio.sleep(2)
+                text = pending.pop(0)
+                print(f"\nCALLER: {text}", flush=True)
+                await ws.send(json.dumps({"type": "user_message", "text": text}))
+            elif kind == "agent_response":
+                # Give the last analysis time to land and be delivered.
+                await asyncio.sleep(6)
+                break
 
 
 def serve() -> None:
@@ -90,7 +227,11 @@ def serve() -> None:
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
-    if command == "watch" and len(sys.argv) > 2:
+    if command == "provision":
+        provision()
+    elif command == "talk":
+        asyncio.run(talk(sys.argv[2:] or ["I'm locked out, can you reset my password"]))
+    elif command == "watch" and len(sys.argv) > 2:
         asyncio.run(watch_one(sys.argv[2]))
     elif command == "serve":
         serve()

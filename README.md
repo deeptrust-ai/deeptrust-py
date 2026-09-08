@@ -143,9 +143,27 @@ just check      # lint, types, tests
 Everything runs through [uv](https://docs.astral.sh/uv/), so there is no
 virtualenv to activate. `just` on its own lists the rest.
 
+## Local development
+
+`dev/server.py` is a local stand-in for the API, so this client, both adapters
+and both examples run with no key and no network:
+
+```bash
+just devserver     # http://127.0.0.1:8080
+```
+
+It is not the analysis. The hosted API runs a reasoning model against an
+organisation's runbook, SOPs and controls; this matches a handful of patterns,
+which is enough to see a finding arrive and a nudge get delivered. A rule can
+never separate a caller relaying a real approval from one inventing it, which
+is the whole reason the real thing is not this.
+
+Point a client at it with `DEEPTRUST_BASE_URL`.
+
 ## Status
 
-Alpha. `analyze` and both adapters work. `check` is defined and unimplemented.
-The shapes in `deeptrust.types` may still change before 1.0.
+`0.0.1`, first release. `analyze` and both adapters work. `check` is defined
+and raises `NotImplementedError`. The shapes in `deeptrust.types` are the part
+most likely to move.
 
 Apache 2.0.

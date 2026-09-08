@@ -1,6 +1,6 @@
 [project]
 name = "deeptrust-ai"
-version = "0.1.0"
+version = "0.0.1"
 description = "QA and runtime nudges for voice agents, while the call is still happening."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,6 +37,10 @@ packages = ["src/deeptrust"]
 
 [dependency-groups]
 dev = [
+  # dev/server.py: a local stand-in for the API, so the client and both
+  # adapters can be run end to end with no key and no network.
+  "fastapi>=0.110",
+  "uvicorn>=0.30",
   "pytest>=8",
   "pytest-asyncio>=0.24",
   "respx>=0.21",

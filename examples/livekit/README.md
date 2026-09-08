@@ -70,7 +70,8 @@ On LiveKit the analysis lands while the agent is still generating, so a nudge
 can stop a reply part-way through. Pass `interrupt=False` to add it to the
 agent's context and let the current reply finish instead.
 
-## Pointing at a local policy service
+## Running with no DeepTrust key
 
-`DEEPTRUST_BASE_URL` in `.env.example` points at `127.0.0.1:8080`. Set it to
-the hosted API once you have a key for it.
+`just devserver` in the repo root starts a local stand-in for the API on
+`:8080`, which is what `DEEPTRUST_BASE_URL` in `.env.example` points at. Set it
+to the hosted API once you have a key.

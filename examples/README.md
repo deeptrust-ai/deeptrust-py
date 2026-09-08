@@ -6,7 +6,7 @@ README showing real output from a real run.
 | | |
 |---|---|
 | [`livekit/`](livekit) | An agent with DeepTrust attached in one line. Nudges can interrupt a reply in progress. |
-| [`elevenlabs/`](elevenlabs) | Watching live conversations from outside. No code inside the agent at all. |
+| [`elevenlabs/`](elevenlabs) | An agent it provisions for you, watched from outside. No code inside the agent at all. |
 
 Both resolve `deeptrust-ai` from this checkout rather than the published
 package, so they exercise the code in this repo:
@@ -16,5 +16,5 @@ package, so they exercise the code in this repo:
 deeptrust-ai = { path = "../..", editable = true }
 ```
 
-Both read `DEEPTRUST_BASE_URL`, so they can run against a local policy service
-while the hosted API is being built.
+Both read `DEEPTRUST_BASE_URL`, so `just devserver` in the repo root is enough
+to run either one end to end with no DeepTrust key and no network.
