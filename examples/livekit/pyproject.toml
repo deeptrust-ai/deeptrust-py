@@ -1,0 +1,15 @@
+[project]
+name = "deeptrust-example-livekit"
+version = "0"
+requires-python = ">=3.11"
+dependencies = [
+  "deeptrust-ai[livekit]",
+  "livekit-plugins-deepgram>=1.0",
+  "livekit-plugins-openai>=1.0",
+  "python-dotenv>=1.0",
+]
+
+# Uses the checkout rather than the published package, so the example exercises
+# the code in this repo.
+[tool.uv.sources]
+deeptrust-ai = { path = "../..", editable = true }

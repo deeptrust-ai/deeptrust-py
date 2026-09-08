@@ -9,3 +9,9 @@ build/
 .ruff_cache/
 .env
 .DS_Store
+
+# Examples resolve the SDK from this checkout and keep their own lockfiles out
+# of it; each README says how to run them.
+examples/*/.venv/
+examples/*/uv.lock
+examples/*/.env
