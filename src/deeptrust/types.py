@@ -1,22 +1,14 @@
-"""The wire types.
+"""Request and response types for the DeepTrust API.
 
-These mirror the server's vocabulary deliberately. A finding, a nudge and a
-control id mean the same thing here as they do in a human-led call, because the
-alternative is two products that cannot share a dashboard or an evidence
-record.
+`Transcript` is a list of `Turn`, and that is also how it goes over the wire.
+An agent call has two participants with fixed roles, so a turn always has an
+unambiguous speaker. `Transcript.render()` produces the flattened
+`"role: text"` form, which some analyses take instead.
 
-Two shapes are worth explaining.
-
-`Transcript` is turns, on this side and on the wire. The human-led product
-flattens a call to one string because those calls are multi party with no fixed
-roles, so speaker attribution has to be encoded in the prose. An agent call is
-one caller and one agent, which makes the structure free: the analysis always
-knows whose turn it is looking at, per-turn metadata has somewhere to live, and
-a later incremental mode can carry a cursor over turns rather than re-sending
-text. `render()` stays for the flattened form the current analysis expects.
-
-`Nudge` is three parts, not one. A note with no next step leaves the agent to
-invent one, and it invents a handover.
+`Nudge` has three parts. `title` names what was found, `description` says what
+was seen in the call, and `details` says what the agent should do about it. An
+agent given only the first two has to choose a response itself, and the choice
+it tends to make is to hand the call to a person.
 """
 
 from __future__ import annotations
@@ -30,15 +22,11 @@ RiskLevel = Literal["low", "medium", "high"]
 
 @dataclass(frozen=True)
 class Turn:
-    """One thing somebody said.
+    """One thing said on the call.
 
-    `speaker` exists for the rare agent call that is not strictly two party: a
-    warm transfer, or a supervisor joining. It defaults to the role, which is
-    the right answer for every other call.
-
-    Per-turn metadata belongs here as it arrives. The obvious next one is the
-    tools the agent called on this turn, which would let the analysis see what
-    an agent did rather than only what it said.
+    `at` is a Unix timestamp and optional. `speaker` names the participant when
+    a call has more than the usual two, as after a warm transfer or when a
+    supervisor joins; it defaults to `role`.
     """
 
     role: Role
@@ -63,7 +51,8 @@ class Turn:
 class Transcript:
     """The call so far.
 
-    Append is local and free. Nothing leaves the process until a job runs.
+    `append` only adds to this list. Nothing is sent to the API until
+    `Session.analyze` is called.
     """
 
     turns: list[Turn] = field(default_factory=list)
@@ -74,14 +63,11 @@ class Transcript:
         return turn
 
     def to_wire(self) -> list[dict[str, Any]]:
-        """The payload. Turns, in order."""
+        """Turns, in order, as sent to the API."""
         return [t.to_wire() for t in self.turns]
 
     def render(self) -> str:
-        """The flattened form the human-call analysis expects. Kept so the
-        server can feed the existing transcript field without the client having
-        to know that is what happens.
-        """
+        """The transcript as one string, a `"role: text"` line per turn."""
         return "\n".join(t.render() for t in self.turns)
 
     def __len__(self) -> int:
@@ -90,19 +76,15 @@ class Transcript:
 
 @dataclass(frozen=True)
 class User:
-    """The human on the other end of the agent.
+    """The person the agent is talking to.
 
-    Named for the `user` role on a turn, and for the same reason every chat API
-    uses it. "Caller" was the obvious word and it is wrong half the time: on an
-    outbound call the agent is the caller and the human is not.
+    `role` is an authorisation role from the caller's own system, such as
+    MEMBER or ADMIN, and policy is written against it. It is unrelated to
+    `Turn.role`, which says who spoke.
 
-    `role` here is an authorisation role, MEMBER or ADMIN or whatever your
-    system uses, and it is what policy is written against. That is a different
-    thing from `Turn.role`, which says who spoke.
-
-    Everything here is an assertion by the integrator rather than something we
-    established, so `verified` means "your system says they verified", and the
-    record keeps who claimed it.
+    Every field is supplied by the integrating application, so `verified` means
+    that application considers this person verified. DeepTrust records the
+    claim and does not check it.
     """
 
     id: str
@@ -123,20 +105,24 @@ class User:
 
 @dataclass(frozen=True)
 class Nudge:
-    """What to tell the agent, and what it should do about it."""
+    """Something to tell the agent mid-call, with the action to take."""
 
     title: str
     description: str
     details: str
 
     def render(self) -> str:
-        """One string, for platforms that take a single block of context."""
+        """`description` and `details` joined, for platforms that accept a
+        single block of context rather than fields."""
         return " ".join(p for p in (self.description, self.details) if p).strip()
 
 
 @dataclass(frozen=True)
 class Finding:
-    """Something the analysis noticed. May or may not warrant a nudge."""
+    """Something the analysis found in the call.
+
+    `nudge` is set only when the finding is worth telling the agent about.
+    """
 
     kind: str
     detail: str
@@ -177,17 +163,19 @@ class Analysis:
 
     @property
     def nudges(self) -> list[Nudge]:
-        """Findings worth saying to the agent, in the order they arrived."""
+        """The nudges from this analysis, in the order the findings came."""
         return [f.nudge for f in self.findings if f.nudge is not None]
 
 
 @dataclass(frozen=True)
 class Verdict:
-    """The gate's answer on one action. Lands in v1.5.
+    """A decision about one action the agent wants to take.
 
-    `instruction` is the field to hand a model: the refusal and the remedy
-    already composed, so nothing downstream has to decide what an agent should
-    do about a deny.
+    `blocked` is true when the action must not run. `resolution` says how the
+    call should proceed instead, and `instruction` is the refusal and the
+    resolution written as a single sentence to pass to a model.
+
+    Returned by `Session.check`, which is not yet implemented.
     """
 
     decision: Literal["allow", "warn", "deny", "hold"]

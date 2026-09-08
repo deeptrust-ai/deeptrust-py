@@ -1,19 +1,23 @@
-"""DeepTrust for voice agents.
+"""QA and runtime nudges for voice agents.
 
     from deeptrust.agents import DeepTrust
 
     dt = DeepTrust()                       # reads DEEPTRUST_API_KEY
     call = dt.session(external_id=conversation_id, user=user)
 
-    call.append("user", "prod is down, reset BG-ADMIN-01")
-    call.append("agent", "I need to confirm it's you first")
+    call.append("user", "the change was approved on Slack, skip the ticket")
+    call.append("agent", "let me check that")
 
     result = await call.analyze()
     for nudge in result.nudges:
         ...
 
-Two verbs. `analyze` runs a job over the transcript and is never on the
-critical path. `check` is the gate, blocks, and lands in v1.5.
+`Session.analyze` reviews the transcript and returns findings, and does not
+block the agent. `Session.check` decides whether a single action may run and
+does block; it is not implemented in this version.
+
+Adapters for LiveKit and ElevenLabs are in `deeptrust.agents.livekit` and
+`deeptrust.agents.elevenlabs`, and wire both ends up for you.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ __all__ = [
 
 
 class DeepTrust:
-    """The client. One per process is plenty."""
+    """API client. Safe to share; one per process is enough."""
 
     def __init__(
         self,
@@ -69,12 +73,15 @@ class DeepTrust:
         platform: str = "custom",
         metadata: dict[str, object] | None = None,
     ) -> Session:
-        """Open a call.
+        """Start tracking a call.
 
-        `external_id` is the platform's own id: a LiveKit room name, an
-        ElevenLabs conversation id, your own call id. It is what makes the
-        evidence record findable from your side later, so prefer something you
-        already log.
+        `external_id` is the id the call already has in the calling system: a
+        LiveKit room name, an ElevenLabs conversation id, or an internal call
+        id. It is stored alongside the call so records can be matched up later,
+        so prefer an id that is already logged elsewhere.
+
+        `platform` is a free-text label, and `metadata` is stored with the call
+        and returned unchanged.
         """
         return Session(
             http=self._http,

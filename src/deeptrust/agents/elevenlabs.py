@@ -6,21 +6,20 @@
     monitor = Monitor(DeepTrust(), api_key=os.environ["ELEVENLABS_API_KEY"])
     await monitor.watch(conversation_id, user=user)
 
-This one needs no code inside the agent. ElevenLabs exposes a per-conversation
-monitor socket, so DeepTrust connects from its own side with a workspace key,
-reads the transcript as it happens, and sends findings back as contextual
-updates on the same socket.
+Nothing runs inside the agent here. ElevenLabs exposes a monitor socket per
+conversation, so this connects to it with a workspace API key, reads the
+transcript as it happens, and sends nudges back as contextual updates on the
+same socket.
 
-Two things differ from LiveKit and the SDK should not pretend otherwise.
+Two consequences of that, both different from the LiveKit adapter:
 
-Contextual updates are documented as non-interrupting, so a finding shapes the
-next turn rather than the current one. Every delivery reports which it was.
+Contextual updates do not interrupt, so a nudge affects the agent's next turn
+rather than the one in progress.
 
-The socket carries events, not audio. That suits this SDK, which does context
-analysis and not voice classification, and it is the reason a HIPAA
-conversation about it is short.
+The socket carries transcript events, not audio, so nothing here has access to
+the audio stream.
 
-Install with the extra:  pip install "deeptrust[elevenlabs]"
+Install with the extra:  pip install "deeptrust-ai[elevenlabs]"
 """
 
 from __future__ import annotations
@@ -65,11 +64,14 @@ class Monitor:
         *,
         user: User | None = None,
     ) -> None:
-        """Start watching one conversation. Returns as soon as it is running.
+        """Begin watching a conversation. Returns once the watcher is running.
 
-        Connect after the conversation has started. ElevenLabs replays only
-        about the last hundred cached events, so for an outbound call use the
-        id the outbound API hands back rather than waiting for a webhook.
+        The conversation must already have started. ElevenLabs replays only its
+        last hundred or so events on connect, so connect promptly: for an
+        outbound call, use the conversation id returned when the call is
+        placed.
+
+        Watching the same conversation twice is a no-op.
         """
         if conversation_id in self._watching:
             return
@@ -88,7 +90,7 @@ class Monitor:
         except ImportError as exc:  # pragma: no cover
             raise ConfigError(
                 "the ElevenLabs adapter needs websockets. "
-                'Install with: pip install "deeptrust[elevenlabs]"'
+                'Install with: pip install "deeptrust-ai[elevenlabs]"'
             ) from exc
 
         call = self._dt.session(external_id=cid, user=user, platform="elevenlabs")
@@ -128,10 +130,10 @@ class Monitor:
 
 
 def _read_turn(ev: dict[str, Any]) -> tuple[str, str]:
-    """Pull a turn out of a monitor event.
+    """Extract a turn from a monitor event, or ("", "") if it is not one.
 
-    The event names are ElevenLabs', so this is the one function that has to
-    change when they add another. Everything above it works in our vocabulary.
+    The only place ElevenLabs event names appear. Events other than user and
+    agent transcripts, such as audio and interruptions, are ignored.
     """
     kind = ev.get("type")
     if kind == "user_transcript":

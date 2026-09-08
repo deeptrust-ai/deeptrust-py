@@ -11,15 +11,16 @@
         user=User(id=account_id, role="MEMBER"),
     )
 
-`attach` subscribes to the AgentSession's conversation items, runs a job when
-the caller has said something new, and delivers any nudge to the agent.
+`attach` subscribes to the session's conversation items, analyzes the
+transcript when the user has said something new, and delivers any nudge to the
+agent.
 
-On LiveKit a nudge can interrupt. The analysis lands while the agent is still
-generating, so a finding about coercion can stop a sentence on its way out
-rather than correcting it afterwards. That is not true on every platform, so
-`interrupt` is a parameter and the record says which happened.
+A nudge is added to the agent's chat context, and by default also interrupts:
+because the agent runs in this process, a nudge can arrive while it is still
+generating and stop a reply part-way through. Pass `interrupt=False` to add the
+nudge to the context and let the current reply finish.
 
-Install with the extra:  pip install "deeptrust[livekit]"
+Install with the extra:  pip install "deeptrust-ai[livekit]"
 """
 
 from __future__ import annotations
@@ -47,15 +48,18 @@ def attach(
     Analysis runs on caller turns only. Feeding an agent's own replies back in
     doubles the work and lets its answers reclassify the call.
 
-    Pass `agent` when you hold it. Reading it off the session works, and it
-    breaks quietly the day LiveKit renames the attribute.
+    Pass `agent` if it is available. Otherwise it is read from
+    `agent_session.current_agent`.
+
+    Returns the DeepTrust session, so the transcript and findings remain
+    reachable.
     """
     call = dt.session(external_id=external_id, user=user, platform="livekit")
     tasks: set[asyncio.Task[None]] = set()
 
     def _spawn(coro: Any) -> None:
-        # asyncio keeps only weak references to tasks, so an unheld task can be
-        # collected while it is still running.
+        # asyncio holds only a weak reference to a task, so a task nobody keeps
+        # can be garbage collected mid-flight. Hence the set.
         t = asyncio.create_task(coro)
         tasks.add(t)
         t.add_done_callback(tasks.discard)

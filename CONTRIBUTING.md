@@ -9,29 +9,32 @@ just check       # lint, types, tests. what CI runs
 
 ## What goes where
 
-`src/deeptrust/types.py` is the vocabulary, and it is shared with the human-led
-product on purpose. A finding, a nudge and a control id mean the same thing in
-both, because the alternative is two products that cannot share a dashboard or
-an evidence record. Changing a shape here is a bigger decision than it looks.
+`src/deeptrust/types.py` holds the request and response shapes. They match the
+API's own vocabulary, so a field renamed here is an API change rather than a
+local one.
 
-`src/deeptrust/_http.py` is transport and stays dull. It is the layer a code
-generator would own if we go spec-first for other languages.
+`src/deeptrust/_http.py` is transport only: base URL, auth header, retries, and
+turning error responses into exceptions. It knows nothing about analyses or
+verdicts.
 
-`src/deeptrust/agents/` is the surface customers hold. Two verbs, and adapters
-that are thin enough to read in one sitting.
+`src/deeptrust/agents/` is the public surface. Two methods, `analyze` and
+`check`, plus the adapters.
 
 ## Adapters
 
-An adapter translates a platform's events into turns and a nudge into whatever
-that platform accepts. It does not interpret findings and it does not decide
-policy. When a platform cannot do something, say so in the adapter rather than
-emulating it: contextual updates on ElevenLabs cannot interrupt, so that
-adapter shapes the next turn and the docstring explains why.
+An adapter translates a platform's events into turns, and a nudge into whatever
+that platform accepts. It should not interpret findings or make policy
+decisions.
 
-Each adapter is an optional extra. Someone integrating their own stack should
-not be made to install a platform SDK they do not use.
+Where a platform cannot do something, document the limit rather than emulating
+it. ElevenLabs contextual updates cannot interrupt a reply, so that adapter
+affects the next turn and its docstring says so.
+
+Each adapter is an optional extra, so installing the library does not pull in a
+platform SDK that will not be used.
 
 ## Tests
 
-Platform SDKs are faked, never imported in tests. The tests pin the contract:
-what goes on the wire, what comes back, and what happens when a key is wrong.
+Platform SDKs are faked rather than imported, so the suite runs without them
+and without network access. The tests cover the request body, the parsing of
+responses, and the exception raised for each error status.

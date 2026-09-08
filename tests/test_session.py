@@ -196,9 +196,10 @@ async def test_session_id_carries_across_jobs() -> None:
 
 
 @respx.mock
-async def test_the_gate_says_when_it_lands() -> None:
+async def test_check_is_not_implemented_and_says_so() -> None:
+    """An unimplemented method should name itself, not fail obscurely."""
     call = client().session(external_id="room-1")
-    with pytest.raises(NotImplementedError, match="v1.5"):
+    with pytest.raises(NotImplementedError, match="Session.check is not implemented"):
         await call.check(action="password.reset")
 
 

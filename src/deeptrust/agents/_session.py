@@ -1,8 +1,8 @@
-"""One call.
+"""A single call, and the two requests that can be made about it.
 
-The session holds the transcript locally and submits it as a job. It does not
-hold the analysis: each job returns its own result, and the server keeps the
-record.
+The session accumulates turns locally and submits the transcript when
+`analyze` is called. Results are not stored on the session: each call to
+`analyze` returns its own `Analysis`, and the full record lives server-side.
 """
 
 from __future__ import annotations
@@ -74,40 +74,42 @@ class Session:
         self.platform = platform
         self.metadata = metadata
         self.transcript = Transcript()
-        # Set by the first job, so subsequent jobs and the record line up.
+        # Assigned by the API on the first analyze(), then sent with every
+        # later request so they group into one call.
         self.id: str | None = None
-        # How many turns the last job saw. Lets a caller skip a job when
-        # nothing has been said since, which is the common case on an agent
-        # turn that produced no caller speech.
+        # Turn count at the last analyze(), used to skip a request when
+        # nothing new has been said.
         self._analyzed_upto = 0
 
     # ── building the transcript ──────────────────────────────────────────────
 
     def append(self, role: str, text: str, **kw: Any) -> Turn:
-        """Record a turn. Local, free, and does not call us."""
+        """Add a turn to the transcript. Sends nothing."""
         return self.transcript.append(role, text, **kw)  # type: ignore[arg-type]
 
     @property
     def pending(self) -> int:
-        """Turns said since the last job."""
+        """Turns added since the last `analyze`."""
         return len(self.transcript) - self._analyzed_upto
 
     # ── the semantic plane ───────────────────────────────────────────────────
 
     async def analyze(self, *, force: bool = False) -> Analysis | None:
-        """Run one job over the transcript.
+        """Analyze the transcript and return what was found.
 
-        Returns None when nothing has been said since the last job, which
-        keeps an adapter from paying for a job on every agent turn. Pass
-        force=True to run anyway.
+        Returns None when no turns have been added since the last call, so
+        this can be called on every turn without sending a request each time.
+        Pass `force=True` to analyze regardless.
 
-        This is never on the critical path. The caller has already heard the
-        agent by the time a finding lands, which is why a finding shapes the
-        next turn rather than the current one.
+        This does not block the agent. A result arrives after the turn that
+        produced it has already been spoken, so a nudge affects what the agent
+        says next rather than what it is saying now.
         """
         if not force and self.pending == 0:
             return None
 
+        # The whole transcript is sent each time. The API tracks what it has
+        # already seen for this session and analyzes only the new turns.
         t0 = time.perf_counter()
         body: dict[str, Any] = {
             "external_id": self.external_id,
@@ -145,16 +147,19 @@ class Session:
         args: dict[str, Any] | None = None,
         facts: dict[str, Any] | None = None,
     ) -> Verdict:
-        """The gate. Blocking, deterministic, and lands in v1.5.
+        """Decide whether an action may run. Not yet implemented.
 
-        `facts` is the part that needs work on the integrator's side. Controls
-        compare fields rather than reading the transcript, which is what keeps
-        the decision deterministic and sub-millisecond, so the booleans a
-        control needs have to be computed before the action is proposed. That
-        is the only place this SDK touches a customer's own systems.
+        Unlike `analyze`, this blocks: it is meant to be called from a tool
+        handler before the action executes, and the returned `Verdict` says
+        whether to proceed.
+
+        `facts` carries the values the policy is written against, such as
+        whether a change ticket is approved or an account is protected.
+        Policies compare these fields rather than reading the transcript, which
+        is what makes the decision deterministic, so the calling application
+        computes them from its own systems before proposing the action.
         """
         raise NotImplementedError(
-            "the gate lands in v1.5. Today this SDK does analysis and nudge "
-            "delivery. If you need an action blocked before it runs, say so and "
-            "we will prioritise it."
+            "Session.check is not implemented in this version. "
+            "This release covers analysis and nudge delivery."
         )

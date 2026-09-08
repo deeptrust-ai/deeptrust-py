@@ -1,9 +1,11 @@
-"""Errors the SDK raises.
+"""Exceptions raised by this library.
 
-Every one of these is meant to be readable by whoever integrated us at two in
-the morning, without opening our source. That is why the entitlement and scope
-cases are their own types rather than a generic 403: those two are the ones a
-customer hits on day one, and "403" tells them nothing about which key to fix.
+All of them derive from `DeepTrustError`, so `except DeepTrustError` catches
+everything.
+
+`ScopeError` and `EntitlementError` are separate types rather than one generic
+authorization error because the fix differs. A missing scope is corrected on
+the key itself; a missing entitlement cannot be corrected by the caller.
 """
 
 from __future__ import annotations
@@ -14,22 +16,26 @@ class DeepTrustError(Exception):
 
 
 class ConfigError(DeepTrustError):
-    """Nothing was wrong with the request. The client was built wrong."""
+    """The client was constructed with missing or invalid arguments."""
 
 
 class AuthError(DeepTrustError):
-    """The API key is missing, malformed, revoked, or from another workspace."""
+    """The API key was refused: missing, malformed, revoked, or for another
+    workspace."""
 
 
 class EntitlementError(DeepTrustError):
-    """The key is valid and the organisation is not set up for agent calls."""
+    """The key is valid and the organization is not enabled for agent calls.
+
+    Not fixable from the client. The organization's plan has to change.
+    """
 
 
 class ScopeError(DeepTrustError):
-    """The key is valid and lacks the scope this call needs.
+    """The API key is valid and lacks the scope this call needs.
 
-    Analysis and enforcement are separate scopes on purpose. A team piloting
-    analysis should not be holding a key that can block their production calls.
+    Analysis and enforcement carry separate scopes, so a key that can read a
+    call is not necessarily a key that can block one.
     """
 
     def __init__(self, needed: str, held: list[str] | None = None) -> None:
@@ -43,7 +49,10 @@ class ScopeError(DeepTrustError):
 
 
 class RateLimited(DeepTrustError):
-    """Too many jobs. `retry_after` is seconds, when the server said."""
+    """The organization's request limit was exceeded.
+
+    `retry_after` is the number of seconds to wait, when the API supplied one.
+    """
 
     def __init__(self, message: str, retry_after: float | None = None) -> None:
         super().__init__(message)
@@ -51,7 +60,11 @@ class RateLimited(DeepTrustError):
 
 
 class ServiceError(DeepTrustError):
-    """The service failed. Carries the request id, which is what support needs."""
+    """The API returned an unexpected error.
+
+    `request_id` identifies the failed request in DeepTrust's logs; quote it
+    when reporting the problem.
+    """
 
     def __init__(self, message: str, status: int, request_id: str | None = None) -> None:
         super().__init__(

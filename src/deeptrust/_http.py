@@ -1,8 +1,8 @@
-"""Transport. One place that knows about HTTP, auth headers and retries.
+"""HTTP transport for the DeepTrust API.
 
-This layer is deliberately small and dull. It is the part a code generator
-would own if we go spec-first for the TypeScript client, so nothing clever
-lives here.
+Holds the base URL, the bearer token and the retry policy, and turns error
+responses into the exception types in `errors`. Nothing in this module knows
+what an analysis or a verdict is.
 """
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ class Http:
                 "content-type": "application/json",
             },
         )
-        # Retries cover connection failures and 5xx only. A job is not
-        # idempotent enough to retry blindly on a timeout, so a timeout
-        # surfaces rather than duplicating work.
+        # Applies to connection failures and 5xx responses. A timeout is not
+        # retried: the server may have accepted the job, and retrying would run
+        # it twice.
         self.max_retries = max_retries
 
     async def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -93,6 +93,10 @@ class Http:
         except Exception:
             detail = r.text[:300]
 
+        # 401 and 403 both mean the key was refused, and the reason decides
+        # what the caller can do about it. A missing scope is fixed on the key,
+        # a missing entitlement is not fixable by the caller at all, and
+        # anything else means the key itself is wrong.
         if r.status_code in (401, 403):
             code = str(payload.get("code") or "")
             if code == "missing_scope":

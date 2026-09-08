@@ -1,0 +1,49 @@
+name: release
+
+# Publishes on a tag. No API token anywhere: PyPI trusted publishing exchanges
+# this workflow's OIDC identity for a short-lived upload token, so nothing
+# long-lived exists to leak.
+#
+# One-time setup, before the first tag:
+#   1. pypi.org -> Your projects -> Publishing -> Add a pending publisher
+#   2. project deeptrust-ai, owner deeptrust-ai, repo deeptrust-python,
+#      workflow release.yml, environment pypi
+#   3. Create a `pypi` environment on the repo and restrict it to tags
+#
+# Then:  git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-extras --group dev
+      # A tag that ships a failing build is worse than a late release.
+      - run: uv run ruff check src tests
+      - run: uv run mypy
+      - run: uv run pytest -q
+      - run: uv build
+      # Proves the wheel imports on its own rather than from the source tree.
+      - run: uv run --isolated --no-project --with dist/*.whl python -c "import deeptrust; print(deeptrust.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

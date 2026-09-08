@@ -1,14 +1,16 @@
 # deeptrust-python
 
-Context analysis and runtime nudges for voice agents.
+QA and runtime nudges for voice agents.
 
 Your agent runs wherever it already runs. This client sends the transcript as
 it happens, gets back what the analysis found, and delivers the nudge to the
 agent while the caller is still on the line.
 
 ```bash
-pip install deeptrust
+pip install deeptrust-ai
 ```
+
+The distribution is `deeptrust-ai` and it imports as `deeptrust`.
 
 ```python
 import os
@@ -39,26 +41,30 @@ say the same words. A rule cannot separate them, which is the whole reason
 this exists.
 
 The analysis reads the call against your organisation's runbook, SOPs and
-controls, and returns findings. A finding that warrants saying something to the
-agent carries a nudge: what was noticed, and what to do next. A note without a
-next step leaves the agent to invent one, and it invents a handover.
+controls, and returns findings. A finding worth telling the agent about carries
+a nudge, which has both what was seen and what to do about it. An agent given
+only the first has to pick a response itself, and the one it usually picks is
+handing the call to a person.
 
-## Two verbs
+## Two methods
 
-`analyze` runs a job over the transcript. It never sits on the critical path,
-so the caller has already heard the agent by the time a finding lands. That is
-why a finding shapes the next turn.
+`analyze` reviews the transcript and returns findings. It does not block the
+agent, so a result arrives after the turn that caused it has been spoken, and a
+nudge affects what the agent says next.
 
-`check` is the gate: a blocking decision on one action, before it runs. It
-lands in v1.5, and the client tells you so rather than pretending.
+`check` decides whether a single action may run, and does block. It is meant to
+be called from a tool handler before the action executes. Not implemented in
+this version.
 
 ## The transcript is turns
 
-An agent call is one caller and one agent, so the structure is free and this
-client keeps it. `append` is local and costs nothing. Nothing leaves the
-process until `analyze` runs, and `analyze` returns `None` when nothing has
-been said since the last job, so an agent turn with no caller speech does not
-cost you a job.
+An agent call has two participants with fixed roles, so every turn has an
+unambiguous speaker and the transcript stays structured rather than flattened
+to prose.
+
+`append` only adds to a local list. Nothing is sent until `analyze` is called,
+and `analyze` returns `None` when no turns have been added since the last one,
+so it is safe to call on every turn.
 
 ```python
 call.append("user", "I'm locked out")
@@ -70,7 +76,7 @@ await call.analyze()  # None. nothing new was said
 ## LiveKit
 
 ```bash
-pip install "deeptrust[livekit]"
+pip install "deeptrust-ai[livekit]"
 ```
 
 ```python
@@ -88,7 +94,7 @@ its way out. Pass `interrupt=False` to shape the next turn instead.
 ## ElevenLabs
 
 ```bash
-pip install "deeptrust[elevenlabs]"
+pip install "deeptrust-ai[elevenlabs]"
 ```
 
 ```python
@@ -107,7 +113,7 @@ socket.
 Two differences from LiveKit, which the client reports rather than hides.
 Contextual updates are documented as non-interrupting, so a finding shapes the
 next turn. And the socket carries events, not audio, which suits a client that
-does context analysis and no voice classification.
+reads what was said and does not analyse the audio itself.
 
 ## Your own stack
 
@@ -139,8 +145,7 @@ virtualenv to activate. `just` on its own lists the rest.
 
 ## Status
 
-Alpha, and the version says so. The shapes in `deeptrust.types` are the part
-most likely to move before 1.0. The gate arrives in v1.5 and a policy CLI after
-that.
+Alpha. `analyze` and both adapters work. `check` is defined and unimplemented.
+The shapes in `deeptrust.types` may still change before 1.0.
 
 Apache 2.0.

@@ -1,7 +1,7 @@
 [project]
-name = "deeptrust"
+name = "deeptrust-ai"
 version = "0.1.0"
-description = "DeepTrust for voice agents: context analysis and runtime nudges on a live call."
+description = "QA and runtime nudges for voice agents, while the call is still happening."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
