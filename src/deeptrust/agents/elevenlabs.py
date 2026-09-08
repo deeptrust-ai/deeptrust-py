@@ -4,7 +4,7 @@
     from deeptrust.agents.elevenlabs import Monitor
 
     monitor = Monitor(DeepTrust(), api_key=os.environ["ELEVENLABS_API_KEY"])
-    await monitor.watch(conversation_id, caller=caller)
+    await monitor.watch(conversation_id, user=user)
 
 This one needs no code inside the agent. ElevenLabs exposes a per-conversation
 monitor socket, so DeepTrust connects from its own side with a workspace key,
@@ -31,7 +31,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..errors import ConfigError
-from ..types import Caller
+from ..types import User
 from . import DeepTrust
 
 MONITOR_URL = "wss://api.elevenlabs.io/v1/convai/conversations/{cid}/monitor"
@@ -63,7 +63,7 @@ class Monitor:
         self,
         conversation_id: str,
         *,
-        caller: Caller | None = None,
+        user: User | None = None,
     ) -> None:
         """Start watching one conversation. Returns as soon as it is running.
 
@@ -73,7 +73,7 @@ class Monitor:
         """
         if conversation_id in self._watching:
             return
-        task = asyncio.create_task(self._loop(conversation_id, caller))
+        task = asyncio.create_task(self._loop(conversation_id, user))
         self._watching[conversation_id] = task
         task.add_done_callback(lambda _: self._watching.pop(conversation_id, None))
 
@@ -82,7 +82,7 @@ class Monitor:
         if task:
             task.cancel()
 
-    async def _loop(self, cid: str, caller: Caller | None) -> None:
+    async def _loop(self, cid: str, user: User | None) -> None:
         try:
             import websockets
         except ImportError as exc:  # pragma: no cover
@@ -91,7 +91,7 @@ class Monitor:
                 'Install with: pip install "deeptrust[elevenlabs]"'
             ) from exc
 
-        call = self._dt.session(external_id=cid, caller=caller, platform="elevenlabs")
+        call = self._dt.session(external_id=cid, user=user, platform="elevenlabs")
         url = MONITOR_URL.format(cid=cid)
 
         headers = {"xi-api-key": self._key}

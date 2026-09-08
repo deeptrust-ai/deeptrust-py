@@ -47,7 +47,7 @@ class Turn:
     speaker: str | None = None
 
     def render(self) -> str:
-        who = self.speaker or ("caller" if self.role == "user" else self.role)
+        who = self.speaker or self.role
         return f"{who}: {self.text}"
 
     def to_wire(self) -> dict[str, Any]:
@@ -89,10 +89,18 @@ class Transcript:
 
 
 @dataclass(frozen=True)
-class Caller:
-    """Who is on the call, as far as the tool layer knows.
+class User:
+    """The human on the other end of the agent.
 
-    This is an assertion by the integrator rather than something we
+    Named for the `user` role on a turn, and for the same reason every chat API
+    uses it. "Caller" was the obvious word and it is wrong half the time: on an
+    outbound call the agent is the caller and the human is not.
+
+    `role` here is an authorisation role, MEMBER or ADMIN or whatever your
+    system uses, and it is what policy is written against. That is a different
+    thing from `Turn.role`, which says who spoke.
+
+    Everything here is an assertion by the integrator rather than something we
     established, so `verified` means "your system says they verified", and the
     record keeps who claimed it.
     """

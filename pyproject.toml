@@ -19,8 +19,8 @@ dependencies = ["httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://deeptrust.ai"
-Source = "https://github.com/deeptrust-ai/deeptrust-py"
-Issues = "https://github.com/deeptrust-ai/deeptrust-py/issues"
+Source = "https://github.com/deeptrust-ai/deeptrust-python"
+Issues = "https://github.com/deeptrust-ai/deeptrust-python/issues"
 
 [project.optional-dependencies]
 # Adapters are extras so the core client stays a single dependency. A customer

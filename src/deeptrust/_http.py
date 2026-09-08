@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 
+from ._version import __version__
 from .errors import (
     AuthError,
     ConfigError,
@@ -22,7 +23,7 @@ from .errors import (
 )
 
 DEFAULT_BASE_URL = "https://app.deeptrust.ai/api"
-USER_AGENT = "deeptrust-py"
+USER_AGENT = f"deeptrust-python/{__version__}"
 
 
 class Http:

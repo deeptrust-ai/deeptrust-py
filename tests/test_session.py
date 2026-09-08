@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from deeptrust.agents import Caller, DeepTrust
+from deeptrust.agents import DeepTrust, User
 from deeptrust.errors import (
     AuthError,
     ConfigError,
@@ -89,7 +89,7 @@ def test_transcript_is_turns_not_prose() -> None:
     ]
     # The flattened form still exists for the human-call analysis.
     assert (
-        call.transcript.render() == "caller: I am locked out\nagent: I can help with that"
+        call.transcript.render() == "user: I am locked out\nagent: I can help with that"
     )
 
 
@@ -109,7 +109,7 @@ async def test_analyze_posts_turns_and_parses() -> None:
     )
     call = client().session(
         external_id="conv_abc",
-        caller=Caller(id="u_1", role="ADMIN", verified=True),
+        user=User(id="u_1", role="ADMIN", verified=True),
         platform="elevenlabs",
     )
     call.append("user", "her manager approved it on Slack")

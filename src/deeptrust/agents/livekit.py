@@ -1,6 +1,6 @@
 """LiveKit adapter.
 
-    from deeptrust.agents import DeepTrust, Caller
+    from deeptrust.agents import DeepTrust, User
     from deeptrust.agents.livekit import attach
 
     dt = DeepTrust()
@@ -8,7 +8,7 @@
         session,
         dt,
         external_id=ctx.room.name,
-        caller=Caller(id=account_id, role="MEMBER"),
+        user=User(id=account_id, role="MEMBER"),
     )
 
 `attach` subscribes to the AgentSession's conversation items, runs a job when
@@ -28,7 +28,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from ..types import Caller, Nudge
+from ..types import Nudge, User
 from . import DeepTrust
 
 
@@ -38,7 +38,7 @@ def attach(
     *,
     external_id: str,
     agent: Any = None,
-    caller: Caller | None = None,
+    user: User | None = None,
     interrupt: bool = True,
     on_analysis: Callable[[Any], None] | None = None,
 ) -> Any:
@@ -50,7 +50,7 @@ def attach(
     Pass `agent` when you hold it. Reading it off the session works, and it
     breaks quietly the day LiveKit renames the attribute.
     """
-    call = dt.session(external_id=external_id, caller=caller, platform="livekit")
+    call = dt.session(external_id=external_id, user=user, platform="livekit")
     tasks: set[asyncio.Task[None]] = set()
 
     def _spawn(coro: Any) -> None:

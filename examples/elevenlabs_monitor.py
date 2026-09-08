@@ -9,7 +9,7 @@ import os
 
 from fastapi import FastAPI
 
-from deeptrust.agents import Caller, DeepTrust
+from deeptrust.agents import User, DeepTrust
 from deeptrust.agents.elevenlabs import Monitor
 
 app = FastAPI()
@@ -23,7 +23,7 @@ monitor = Monitor(
 async def call_started(body: dict) -> dict:
     await monitor.watch(
         body["conversation_id"],
-        caller=Caller(id=body.get("caller_id", "unknown")),
+        user=User(id=body.get("user_id", "unknown")),
     )
     # ElevenLabs expects this shape back from the initiation webhook.
     return {"type": "conversation_initiation_client_data"}

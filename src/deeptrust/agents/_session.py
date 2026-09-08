@@ -13,12 +13,12 @@ from typing import Any
 from .._http import Http
 from ..types import (
     Analysis,
-    Caller,
     Finding,
     Nudge,
     SopProgress,
     Transcript,
     Turn,
+    User,
     Verdict,
 )
 
@@ -64,13 +64,13 @@ class Session:
         *,
         http: Http,
         external_id: str,
-        caller: Caller | None,
+        user: User | None,
         platform: str,
         metadata: dict[str, object],
     ) -> None:
         self._http = http
         self.external_id = external_id
-        self.caller = caller
+        self.user = user
         self.platform = platform
         self.metadata = metadata
         self.transcript = Transcript()
@@ -117,8 +117,8 @@ class Session:
         }
         if self.id:
             body["session_id"] = self.id
-        if self.caller:
-            body["caller"] = self.caller.to_wire()
+        if self.user:
+            body["user"] = self.user.to_wire()
 
         d = await self._http.post("/agents/analyze", body)
         self.id = d.get("session_id") or self.id

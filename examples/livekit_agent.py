@@ -7,7 +7,7 @@ import os
 
 from livekit.agents import Agent, AgentSession, JobContext
 
-from deeptrust.agents import Caller, DeepTrust
+from deeptrust.agents import User, DeepTrust
 from deeptrust.agents.livekit import attach
 
 
@@ -22,7 +22,7 @@ async def entrypoint(ctx: JobContext) -> None:
         session,
         DeepTrust(api_key=os.environ["DEEPTRUST_API_KEY"]),
         external_id=ctx.room.name,
-        caller=Caller(id=participant.identity, role="MEMBER"),
+        user=User(id=participant.identity, role="MEMBER"),
     )
 
     await session.start(room=ctx.room, agent=agent)

@@ -1,4 +1,4 @@
-# deeptrust-py
+# deeptrust-python
 
 Context analysis and runtime nudges for voice agents.
 
@@ -12,13 +12,13 @@ pip install deeptrust
 
 ```python
 import os
-from deeptrust.agents import DeepTrust, Caller
+from deeptrust.agents import DeepTrust, User
 
 dt = DeepTrust()                       # reads DEEPTRUST_API_KEY
 
 call = dt.session(
     external_id=conversation_id,       # your platform's id for this call
-    caller=Caller(id=account_id, role="MEMBER"),
+    user=User(id=account_id, role="MEMBER"),
     platform="elevenlabs",
 )
 
@@ -74,10 +74,10 @@ pip install "deeptrust[livekit]"
 ```
 
 ```python
-from deeptrust.agents import DeepTrust, Caller
+from deeptrust.agents import DeepTrust, User
 from deeptrust.agents.livekit import attach
 
-attach(session, DeepTrust(), external_id=ctx.room.name, caller=caller)
+attach(session, DeepTrust(), external_id=ctx.room.name, user=caller)
 ```
 
 That subscribes to the session's conversation items, runs a job when the caller
@@ -96,7 +96,7 @@ from deeptrust.agents import DeepTrust
 from deeptrust.agents.elevenlabs import Monitor
 
 monitor = Monitor(DeepTrust(), api_key=os.environ["ELEVENLABS_API_KEY"])
-await monitor.watch(conversation_id, caller=caller)
+await monitor.watch(conversation_id, user=caller)
 ```
 
 This needs no code inside your agent. ElevenLabs exposes a per-conversation
