@@ -37,6 +37,7 @@ def attach(
     dt: DeepTrust,
     *,
     external_id: str,
+    agent: Any = None,
     caller: Caller | None = None,
     interrupt: bool = True,
     on_analysis: Callable[[Any], None] | None = None,
@@ -45,6 +46,9 @@ def attach(
 
     Analysis runs on caller turns only. Feeding an agent's own replies back in
     doubles the work and lets its answers reclassify the call.
+
+    Pass `agent` when you hold it. Reading it off the session works, and it
+    breaks quietly the day LiveKit renames the attribute.
     """
     call = dt.session(external_id=external_id, caller=caller, platform="livekit")
     tasks: set[asyncio.Task[None]] = set()
@@ -58,9 +62,12 @@ def attach(
 
     async def _deliver(nudge: Nudge) -> None:
         text = nudge.render()
-        chat = agent_session.current_agent.chat_ctx.copy()
+        target = agent or getattr(agent_session, "current_agent", None)
+        if target is None:
+            return
+        chat = target.chat_ctx.copy()
         chat.add_message(role="system", content=text)
-        await agent_session.current_agent.update_chat_ctx(chat)
+        await target.update_chat_ctx(chat)
         if interrupt:
             agent_session.interrupt()
             agent_session.generate_reply(instructions=text)
