@@ -676,3 +676,19 @@ button:disabled { opacity: 0.4; cursor: default; }
   border: 1px solid var(--rule); color: var(--faint); cursor: help;
 }
 .enginechip.sdk { border-color: var(--brand); color: var(--brand-soft); }
+
+/* Which side produced a row. The panel carries two sources and they used to
+   share one visual language, so an agent escalating on its own read exactly
+   like the enforcement layer escalating it. */
+.rorigin {
+  /* Inline with the label it qualifies. Not uppercased or letter-spaced with
+     the rest of `.rl`, which would stretch a glyph that is not a letter. */
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0;
+  opacity: 0.9;
+  cursor: help;
+}
+.rorigin.tool { color: var(--soft); }
+.rorigin.deeptrust { color: var(--brand-soft); }
+.rorigin.system { color: var(--faint); }

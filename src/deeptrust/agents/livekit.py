@@ -88,13 +88,27 @@ def attach(
         for nudge in result.nudges:
             await _deliver(nudge)
 
+    # The last turn taken, so a repeat of it can be recognised. LiveKit emits a
+    # conversation item more than once for the same speech in practice, and a
+    # transcript that carries the same sentence twice is analysed twice: the
+    # same finding is reported again and the same nudge delivered again.
+    last: dict[str, str] = {}
+
     def _on_item(ev: Any) -> None:
         item = getattr(ev, "item", None)
         text = getattr(item, "text_content", None) or ""
         if not text:
             return
-        role = str(getattr(item, "role", "unknown"))
-        _spawn(_run("user" if role == "user" else "agent", text))
+        role = "user" if str(getattr(item, "role", "unknown")) == "user" else "agent"
+
+        # Compared against the previous turn only, not the whole transcript: a
+        # caller who says the same thing again later in the call means it, and
+        # that repetition is itself worth analysing.
+        if last.get(role) == text:
+            return
+        last[role] = text
+
+        _spawn(_run(role, text))
 
     # Registered by call rather than by decoration: AgentSession.on is untyped
     # on LiveKit's side, and decorating with it erases our own signature.

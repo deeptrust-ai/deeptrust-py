@@ -158,9 +158,7 @@ async def talk(turns: list[str]) -> None:
             json.dumps(
                 {
                     "type": "conversation_initiation_client_data",
-                    "conversation_config_override": {
-                        "conversation": {"text_only": True}
-                    },
+                    "conversation_config_override": {"conversation": {"text_only": True}},
                 }
             )
         )
@@ -170,9 +168,7 @@ async def talk(turns: list[str]) -> None:
             kind = event.get("type")
 
             if kind == "conversation_initiation_metadata":
-                cid = event["conversation_initiation_metadata_event"][
-                    "conversation_id"
-                ]
+                cid = event["conversation_initiation_metadata_event"]["conversation_id"]
                 print(f"conversation {cid}", flush=True)
                 await monitor.watch(cid, user=User(id="caller-1", role="MEMBER"))
                 print("DeepTrust attached\n", flush=True)

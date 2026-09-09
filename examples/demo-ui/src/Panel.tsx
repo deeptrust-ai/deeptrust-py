@@ -17,8 +17,33 @@ import type {
 import { currentServer } from './servers'
 
 
+/**
+ * Which side produced a row.
+ *
+ * `tool` is the agent acting through one of its own tools. `deeptrust` is this
+ * layer: what the analysis noticed and what it sent back. `system` is the call
+ * itself, neither party. Keeping them apart matters because an agent escalating
+ * on its own read the same as the enforcement layer escalating it.
+ */
+type Origin = 'tool' | 'deeptrust' | 'system'
+
+/** The mark each source carries in the feed. The hexagram is the DeepTrust
+ *  glyph used across the product; the wrench is the agent's own tooling. */
+const ORIGIN_MARK: Record<Origin, string> = {
+  tool: '\u2692',
+  deeptrust: '\u4DFC',
+  system: '\u00B7',
+}
+
+const ORIGIN_TITLE: Record<Origin, string> = {
+  tool: "The agent, acting through one of its own tools",
+  deeptrust: 'DeepTrust: what the analysis found, and what it sent back',
+  system: 'The call itself',
+}
+
 type Row = {
   kind: 'info' | 'good' | 'deny' | 'warn' | 'nudge' | 'hold' | 'ghost' | 'ghostdeny'
+  origin: Origin
   label: string
   line: string
   next?: string
@@ -45,14 +70,17 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
       if (!NOISE.has(b.kind)) {
         if (b.kind === 'sop_identified')
           rows.push({
-            kind: 'info', label: 'Procedure identified', line: sopName(b.detail), at, raw: e,
+            kind: 'info', origin: 'deeptrust', label: 'Procedure identified', line: sopName(b.detail), at, raw: e,
             extra: [{ k: 'id', v: b.detail }, { k: 'classifier', v: `${b.latency_ms}ms` }],
           })
         else if (b.kind === 'step_observed')
-          rows.push({ kind: 'info', label: 'Step observed', line: b.detail, at, raw: e })
+          rows.push({
+            kind: 'info', origin: 'deeptrust', label: 'Step observed',
+            line: b.detail, at, raw: e,
+          })
         else if (b.kind === 'social_engineering')
           rows.push({
-            kind: 'warn', label: 'Risk signal', at, raw: e,
+            kind: 'warn', origin: 'deeptrust', label: 'Risk signal', at, raw: e,
             line: label(SIGNAL_LABEL, b.detail),
             extra: [{ k: 'signal', v: b.detail }],
           })
@@ -62,6 +90,7 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
           // Withheld is the interesting state: we found it, we wrote the nudge,
           // and the agent never saw it. Same row, visibly not delivered.
           kind: b.delivered === false ? 'ghost' : 'nudge',
+          origin: 'deeptrust',
           label: b.delivered === false ? 'Nudge withheld, gate is off' : 'Nudge sent to agent',
           line: b.note ?? b.nudge,
           next: b.next_step ?? undefined,
@@ -77,7 +106,7 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
         if (!seenSteps.has(n)) {
           seenSteps.add(n)
           rows.push({
-            kind: 'good', label: 'Step completed',
+            kind: 'good', origin: 'tool', label: 'Step completed',
             line: `Step ${n} of ${p.steps_total}, ${p.sop_name}`, at, raw: e,
           })
         }
@@ -95,6 +124,7 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
         v = { kind: 'ghostdeny', label: 'Would have blocked' }
       rows.push({
         kind: v.kind,
+        origin: 'tool',
         label: v.label,
         at,
         raw: e,
@@ -127,6 +157,7 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
     if (e.type === 'enforcement') {
       rows.push({
         kind: e.on ? 'good' : 'ghost',
+        origin: 'system',
         label: e.on ? 'Gate connected' : 'Gate disconnected',
         line: e.on
           ? 'Findings reach the agent again.'
@@ -138,17 +169,23 @@ function buildStream(events: CaEvent[], sopName: (id: string) => string): Row[] 
     }
 
     if (e.type === 'executed')
-      rows.push({ kind: 'good', label: 'Done', line: e.detail, at, raw: e })
+      rows.push({
+        kind: 'good', origin: 'tool', label: 'Done', line: e.detail, at, raw: e,
+      })
     // The other half of a block. A refusal that leaves the caller with nothing
     // is a bad call; a refusal that leaves them with a reference is the product.
     if (e.type === 'ticket')
       rows.push({
+        origin: 'tool',
         kind: 'info', label: 'Ticket raised', at, raw: e,
         line: e.ticket,
         extra: [{ k: 'because', v: label(REASON_LABEL, e.reason) }],
       })
     if (e.type === 'escalated')
-      rows.push({ kind: 'warn', label: 'Handed to a person', line: e.reason, at, raw: e })
+      rows.push({
+        kind: 'warn', origin: 'tool', label: 'Handed to a person',
+        line: e.reason, at, raw: e,
+      })
   }
   return rows
 }
@@ -336,7 +373,12 @@ export function Feed({
                 }
               >
                 <span className="rt">{((r.at - t0) / 1000).toFixed(1)}s</span>
-                <span className="rl">{r.label}</span>
+                <span className="rl">
+                  <span className={`rorigin ${r.origin}`} title={ORIGIN_TITLE[r.origin]}>
+                    {ORIGIN_MARK[r.origin]}
+                  </span>{' '}
+                  {r.label}
+                </span>
                 <span className="rline">{r.line}</span>
                 {canOpen && <span className="chev">{isOpen ? '−' : '+'}</span>}
               </button>

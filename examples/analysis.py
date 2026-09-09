@@ -22,6 +22,16 @@ appended for every line spoken, and `analyze()` on a background worker so a
 caller's turn is never waiting on a round trip to the API. Nudges leave over
 SSE because that is what a sidecar's back channel carries in production, and it
 is the one shape a browser can subscribe to without a socket of its own.
+
+One thing on this stream is not part of the SDK or of any integration. Real
+analysis finishes in a worker after the `analyze()` that dispatched it has
+returned, so for a real call the inline result is empty and the panel would sit
+blank. `dev_nudge_db` closes that gap for DeepTrust developers working locally
+by reading nudges straight out of the backend's database -- gated entirely on
+`DEEPTRUST_DEV_DB_URL`, and absent from every run where that is unset. It is a
+convenience for us, not a component: in production the backend delivers nudges
+to the agent platform itself, so nothing in a browser is required for an agent
+to be nudged.
 """
 
 from __future__ import annotations
@@ -106,6 +116,9 @@ class Call:
     )
     subscribers: list[asyncio.Queue[dict[str, Any]]] = field(default_factory=list)
     worker: asyncio.Task[None] | None = None
+    # Local-development only, and None for everyone else. See
+    # `_ensure_dev_db_poller`.
+    dev_db_poller: asyncio.Task[None] | None = None
     stats: dict[str, Any] = field(
         default_factory=lambda: {
             "queued": 0,
@@ -271,6 +284,29 @@ def _ensure_worker(call: Call) -> None:
         call.worker = asyncio.create_task(_worker(call.id))
 
 
+def _ensure_dev_db_poller(call: Call) -> None:
+    """Start the local-development nudge source, if a DeepTrust dev enabled it.
+
+    Off unless `DEEPTRUST_DEV_DB_URL` is set, and a no-op for everyone else --
+    see `dev_nudge_db` for what it is and, more to the point, what it is not.
+    In production nothing needs it: the backend pushes nudges to the agent
+    platform itself, so a nudge reaches an agent whether or not a browser is
+    watching.
+
+    Started here rather than at boot because this is where a session id first
+    exists. Imported here rather than at module scope so a checkout with no
+    database never loads it.
+    """
+    import dev_nudge_db
+
+    if not dev_nudge_db.enabled():
+        return
+    if call.dev_db_poller is None or call.dev_db_poller.done():
+        call.dev_db_poller = asyncio.create_task(
+            dev_nudge_db.poll(call.id, lambda payload: _fanout(call, payload))
+        )
+
+
 # ── endpoints ───────────────────────────────────────────────────────────────
 
 
@@ -342,6 +378,7 @@ async def nudges(session_id: str) -> StreamingResponse:
     call = _call(session_id)
     sub: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=128)
     call.subscribers.append(sub)
+    _ensure_dev_db_poller(call)
 
     async def stream() -> AsyncIterator[str]:
         try:

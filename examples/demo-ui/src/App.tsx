@@ -2,6 +2,7 @@ import {
   BarVisualizer,
   LiveKitRoom,
   RoomAudioRenderer,
+  StartAudio,
   useDataChannel,
   useLocalParticipant,
   useVoiceAssistant,
@@ -438,6 +439,20 @@ export default function App() {
         }
       }}
     >
+      {/*
+        Without this the agent is inaudible: LiveKitRoom subscribes to the
+        agent's audio track but nothing attaches it to an audio element, so the
+        transcript fills in and the room stays silent. BarVisualizer draws the
+        same track without playing it, which makes the failure look like a
+        working call.
+      */}
+      <RoomAudioRenderer />
+      {/*
+        Chrome will not start audio without a gesture, and the click that began
+        the call does not always count once the track arrives later. This
+        renders a prompt when playback is blocked and nothing when it is not.
+      */}
+      <StartAudio label="Click to enable audio" />
       <Call conn={conn} cfg={cfg} onLeave={() => setConn(null)} />
     </LiveKitRoom>
   )

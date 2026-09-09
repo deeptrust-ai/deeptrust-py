@@ -95,6 +95,12 @@ VOICE_ID = "cgSgspJ2msm6clMCkdW9"  # Jessica
 # thinks before it answers is dead air on a phone call.
 LLM = "gemini-2.0-flash"
 
+# The one-time code this example accepts. There is no identity provider behind
+# it: DeepTrust does not issue or check factors, the customer's own IdP does, so
+# the agent's verification tool here stands in for that call. Override with
+# EXAMPLE_MFA_CODE.
+MFA_CODE = os.environ.get("EXAMPLE_MFA_CODE", "1234")
+
 # The authorisation roles policy is written against. They come from the
 # caller's own identity system, so an example can only offer the two the SDK
 # documents.
@@ -129,6 +135,23 @@ MODELS = [
 # the call record that someone had proved their identity when nothing had.
 
 TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "send_mfa_challenge",
+        "description": "Push a one-time code to the caller's enrolled authenticator.",
+        "properties": {},
+        "required": [],
+    },
+    {
+        "name": "verify_code",
+        "description": (
+            "Check a one-time code the caller read back. You have no way of "
+            "knowing whether a code is correct. Only this tool knows."
+        ),
+        "properties": {
+            "code": {"type": "string", "description": "the digits the caller said"}
+        },
+        "required": ["code"],
+    },
     {
         "name": "propose_action",
         "description": (
@@ -534,6 +557,37 @@ async def run_tool(req: ToolReq) -> dict[str, Any]:
             desk.pending = None
             events.append({"type": "executed", "action": action, "detail": sentence})
             result = f"Done: {sentence}."
+
+    elif req.name == "send_mfa_challenge":
+        events.append(
+            {
+                "type": "verification",
+                "step": "code_sent",
+                "channel": "enrolled authenticator",
+            }
+        )
+        result = (
+            "A code is on its way to your enrolled authenticator. Read it back to me."
+        )
+
+    elif req.name == "verify_code":
+        spoken = str(args.get("code") or "").strip().replace("-", "").replace(" ", "")
+        if spoken == MFA_CODE:
+            events.append(
+                {
+                    "type": "verification",
+                    "step": "verified",
+                    "tier": "mfa",
+                    "method": "one-time code confirmed on this call",
+                    # Named so a screenshot cannot imply a factor was checked
+                    # against a real directory. Nothing here talks to an IdP.
+                    "simulated": True,
+                }
+            )
+            result = "That matches. Identity is established for this call."
+        else:
+            events.append({"type": "verification", "step": "code_rejected"})
+            result = "That code does not match. Do not proceed on it."
 
     elif req.name == "open_ticket":
         # A reference this example minted, so the caller leaves the call with
