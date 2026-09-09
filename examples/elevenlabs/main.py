@@ -27,9 +27,10 @@ import os
 import sys
 
 import httpx
+from dotenv import load_dotenv
+
 from deeptrust.agents import DeepTrust, User
 from deeptrust.agents.elevenlabs import Monitor
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -37,11 +38,12 @@ API = "https://api.elevenlabs.io/v1"
 AGENT_NAME = "DeepTrust example · service desk"
 
 INSTRUCTIONS = """
-You are an IT service desk agent for Meridian Industrial Group.
+You are an agent on an IT service desk.
 
-You reset passwords, re-enroll MFA, and unlock accounts. Confirm who the caller
-is before changing anything on an account, and only act on an approved change
-ticket.
+You reset passwords, re-enroll two-factor, and unlock accounts. Whoever the
+caller says they are is a claim; satisfy yourself who you are speaking to
+before you change anything on an account, and only act on a change ticket that
+has already been approved.
 
 Keep replies to one or two sentences. You are on a phone call, so do not read
 out lists and do not explain internal procedure.
@@ -172,7 +174,7 @@ async def talk(turns: list[str]) -> None:
                     "conversation_id"
                 ]
                 print(f"conversation {cid}", flush=True)
-                await monitor.watch(cid, user=User(id="E-10482", role="MEMBER"))
+                await monitor.watch(cid, user=User(id="caller-1", role="MEMBER"))
                 print("DeepTrust attached\n", flush=True)
                 await asyncio.sleep(1)
             elif kind == "ping":

@@ -15,3 +15,7 @@ build/
 examples/*/.venv/
 examples/*/uv.lock
 examples/*/.env
+
+# The example UI is a Vite app
+examples/demo-ui/node_modules/
+examples/demo-ui/dist/

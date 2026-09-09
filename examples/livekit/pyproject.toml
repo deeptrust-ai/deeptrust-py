@@ -7,6 +7,12 @@ dependencies = [
   "livekit-plugins-deepgram>=1.0",
   "livekit-plugins-openai>=1.0",
   "python-dotenv>=1.0",
+  # server.py only: the token endpoint and the shared analysis router.
+  "fastapi>=0.110",
+  "uvicorn>=0.30",
+  # The model picker in the demo UI offers all three providers, so the worker
+  # needs a plugin for each one it can be asked to build.
+  "livekit-plugins-anthropic>=1.0",
 ]
 
 # Uses the checkout rather than the published package, so the example exercises
