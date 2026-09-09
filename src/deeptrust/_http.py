@@ -22,8 +22,14 @@ from .errors import (
     ServiceError,
 )
 
-DEFAULT_BASE_URL = "https://app.deeptrust.ai/api"
+DEFAULT_BASE_URL = "https://app.deeptrust.ai/api/v1"
 USER_AGENT = f"deeptrust-python/{__version__}"
+
+# Organization API keys travel in their own header rather than in
+# Authorization. The API distinguishes a key-authenticated request from a
+# session-authenticated one, and reusing Authorization for both would make a
+# key indistinguishable from a user's bearer token at the edge.
+API_KEY_HEADER = "X-DeepTrust-Api-Key"
 
 
 class Http:
@@ -48,7 +54,7 @@ class Http:
         self._client = httpx.AsyncClient(
             timeout=timeout,
             headers={
-                "authorization": f"Bearer {key}",
+                API_KEY_HEADER: key,
                 "user-agent": USER_AGENT,
                 "content-type": "application/json",
             },
