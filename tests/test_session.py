@@ -18,9 +18,10 @@ from deeptrust.errors import (
     EntitlementError,
     RateLimited,
     ScopeError,
+    ServiceError,
 )
 
-BASE = "https://example.test/api"
+BASE = "https://example.test/api/v1"
 
 ANALYSIS = {
     "session_id": "sess_1",
@@ -74,6 +75,31 @@ def test_api_key_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEEPTRUST_API_KEY", "dt_from_env")
     assert DeepTrust(base_url=BASE) is not None
+
+
+def test_default_base_url_is_the_versioned_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The agent routes live under /api/v1; a client built without a base URL
+    must land there, not one level up."""
+    monkeypatch.delenv("DEEPTRUST_BASE_URL", raising=False)
+    assert (
+        DeepTrust(api_key="dt_test")._http.base_url == "https://app.deeptrust.ai/api/v1"
+    )
+
+
+@respx.mock
+async def test_key_travels_in_the_api_key_header() -> None:
+    """The server reads X-DeepTrust-Api-Key. The bearer form is kept for one
+    release so a client against an older server still works."""
+    route = respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ANALYSIS)
+    )
+    call = client().session(external_id="room-1")
+    call.append("user", "hello")
+    await call.analyze()
+
+    headers = route.calls[0].request.headers
+    assert headers["x-deeptrust-api-key"] == "dt_test"
+    assert headers["authorization"] == "Bearer dt_test"
 
 
 def test_transcript_is_turns_not_prose() -> None:
@@ -218,6 +244,24 @@ async def test_check_is_not_implemented_and_says_so() -> None:
             },
             ScopeError,
         ),
+        # FastAPI wraps a structured refusal under `detail`; the code has to
+        # be found there too.
+        (
+            403,
+            {"detail": {"code": "not_entitled", "message": "no agent access"}},
+            EntitlementError,
+        ),
+        (
+            403,
+            {
+                "detail": {
+                    "code": "missing_scope",
+                    "needed": "agents:analyze",
+                    "scopes": ["read:meetings"],
+                }
+            },
+            ScopeError,
+        ),
         (429, {"detail": "slow down"}, RateLimited),
     ],
 )
@@ -249,3 +293,83 @@ async def test_scope_error_names_the_scope_and_what_the_key_holds() -> None:
         await call.analyze()
     assert "agents:analyze" in str(err.value)
     assert "read:meetings" in str(err.value)
+
+
+@respx.mock
+async def test_nested_error_message_is_kept() -> None:
+    """A refusal wrapped under `detail` should read as its message, not as the
+    dict's repr."""
+    respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(
+            403, json={"detail": {"code": "not_entitled", "message": "plan lacks agents"}}
+        )
+    )
+    call = client().session(external_id="room-1")
+    call.append("user", "hello")
+    with pytest.raises(EntitlementError, match="plan lacks agents"):
+        await call.analyze()
+
+
+@respx.mock
+async def test_end_closes_the_call_once() -> None:
+    respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ANALYSIS)
+    )
+    end = respx.post(f"{BASE}/agents/sessions/sess_1/end").mock(
+        side_effect=[
+            httpx.Response(
+                200, json={"session_id": "sess_1", "ended": True, "already_ended": False}
+            ),
+            httpx.Response(
+                200, json={"session_id": "sess_1", "ended": True, "already_ended": True}
+            ),
+        ]
+    )
+    call = client().session(external_id="room-1")
+
+    # Nothing analyzed, so there is no call on the server to end.
+    assert await call.end() is False
+    assert not end.called
+
+    call.append("user", "hello")
+    await call.analyze()
+    assert await call.end() is True
+    # Ending again is harmless and says it changed nothing.
+    assert await call.end() is False
+    assert end.call_count == 2
+
+
+@respx.mock
+async def test_watch_hands_a_conversation_to_the_hosted_monitor() -> None:
+    route = respx.post(f"{BASE}/agents/conversations/conv_1/watch").mock(
+        return_value=httpx.Response(
+            202, json={"conversation_id": "conv_1", "watching": True, "started": True}
+        )
+    )
+    assert await client().watch("conv_1", agent_id="agent_9") is True
+
+    body = route.calls[0].request.read().decode().replace(" ", "")
+    assert '"platform":"elevenlabs"' in body
+    assert '"agent_id":"agent_9"' in body
+
+
+@respx.mock
+async def test_watch_reports_when_already_watched() -> None:
+    respx.post(f"{BASE}/agents/conversations/conv_1/watch").mock(
+        return_value=httpx.Response(
+            202, json={"conversation_id": "conv_1", "watching": True, "started": False}
+        )
+    )
+    assert await client().watch("conv_1") is False
+
+
+@respx.mock
+async def test_watch_says_when_the_platform_is_not_connected() -> None:
+    respx.post(f"{BASE}/agents/conversations/conv_1/watch").mock(
+        return_value=httpx.Response(
+            404, json={"detail": "elevenlabs is not connected for this organization"}
+        )
+    )
+    with pytest.raises(ServiceError, match="not connected") as err:
+        await client().watch("conv_1")
+    assert err.value.status == 404

@@ -65,6 +65,22 @@ uv run python main.py serve
 For outbound calls, skip the webhook and pass the conversation id that the
 outbound API returns when the call is placed.
 
+## Or let DeepTrust hold the socket
+
+Everything above runs the monitor in your process with your ElevenLabs key.
+The other way is to connect the workspace once in the DeepTrust dashboard
+(Settings, Voice Agents) and pick the agents to watch; DeepTrust then finds the
+calls and holds the socket itself, and none of this example needs to run. When
+your backend already knows a conversation id, hand it over so the call is
+watched from its first turn rather than from the next check:
+
+```bash
+uv run python main.py handoff conv_2601m20xqctperzspz3zzz95pmrs
+```
+
+That is `DeepTrust().watch(conversation_id)`, one request with the DeepTrust
+key alone.
+
 ## What it looks like
 
 The caller asserts an approval that exists somewhere other than a ticket:
