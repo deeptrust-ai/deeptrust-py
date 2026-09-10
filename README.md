@@ -164,10 +164,17 @@ your agent takes instructions.
 
 ## Keys
 
-Keys are created per organisation in the DeepTrust dashboard. Analysis and
-enforcement are separate scopes, so a team piloting analysis is not holding a
-key that can block their production calls. When a key lacks a scope, the client
-says which scope is missing and which the key holds.
+Keys are created per organisation in the DeepTrust dashboard, under Settings
+and then API Keys (the tab is offered to voice-agent organisations). A key
+belongs to the organisation rather than to the person who made it, so it keeps
+working when they leave, and it reaches the agent endpoints and nothing else.
+
+The same key authenticates the hosted path's call-start webhook, so a workspace
+connected through Settings, Voice Agents needs no second credential.
+
+The API does not divide keys by scope today. When it does, the client already
+reports which scope was missing and which the key holds, rather than a bare
+403.
 
 ```bash
 export DEEPTRUST_API_KEY=...

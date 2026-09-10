@@ -88,8 +88,12 @@ def test_default_base_url_is_the_versioned_api(monkeypatch: pytest.MonkeyPatch) 
 
 @respx.mock
 async def test_key_travels_in_the_api_key_header() -> None:
-    """The server reads X-DeepTrust-Api-Key. The bearer form is kept for one
-    release so a client against an older server still works."""
+    """The server reads X-DeepTrust-Api-Key, and only that.
+
+    Authorization is deliberately left alone: the API tells a key-authenticated
+    request from a session-authenticated one by which header carried the
+    credential, so sending both would make a key look like a user's token at
+    the edge."""
     route = respx.post(f"{BASE}/agents/analyze").mock(
         return_value=httpx.Response(200, json=ANALYSIS)
     )
@@ -99,7 +103,7 @@ async def test_key_travels_in_the_api_key_header() -> None:
 
     headers = route.calls[0].request.headers
     assert headers["x-deeptrust-api-key"] == "dt_test"
-    assert headers["authorization"] == "Bearer dt_test"
+    assert "authorization" not in headers
 
 
 def test_transcript_is_turns_not_prose() -> None:
