@@ -6,6 +6,22 @@ Your agent runs wherever it already runs. This client sends the transcript as
 it happens, gets back what the analysis found, and delivers the nudge to the
 agent while the caller is still on the line.
 
+## Two ways in
+
+**Connect, no code.** If your agents run on ElevenLabs, connect the workspace
+once in the DeepTrust dashboard (Settings, Voice Agents) with an API key that
+has the ElevenLabs Agents Write permission, and pick the agents to watch.
+DeepTrust finds their calls, listens along, nudges the agent mid-call, and
+records the transcript. Nothing to install and nothing in this package to run.
+Phone calls are picked up at call setup; other channels within a few seconds.
+
+**This client, in your process.** For your own stack, for LiveKit, or when you
+want the socket held by you rather than by DeepTrust. Append turns, call
+`analyze`, deliver the nudge. The rest of this README is about this path.
+
+The two meet in the same place: every call, either way, lands in the Calls list
+with the `voice_agent` source.
+
 ```bash
 pip install deeptrust-ai
 ```
@@ -46,11 +62,18 @@ a nudge, which has both what was seen and what to do about it. An agent given
 only the first has to pick a response itself, and the one it usually picks is
 handing the call to a person.
 
-## Two methods
+## Three methods
 
 `analyze` reviews the transcript and returns findings. It does not block the
 agent, so a result arrives after the turn that caused it has been spoken, and a
 nudge affects what the agent says next.
+
+`end` tells DeepTrust the call is over, so post-call processing starts now
+rather than after the server's inactivity timeout. Calling it twice is harmless.
+
+```python
+await call.end()
+```
 
 `check` decides whether a single action may run, and does block. It is meant to
 be called from a tool handler before the action executes. Not implemented in
@@ -106,14 +129,32 @@ await monitor.watch(conversation_id, user=caller)
 ```
 
 This needs no code inside your agent. ElevenLabs exposes a per-conversation
-monitor socket, so DeepTrust connects from its own side with a workspace key,
-reads the transcript, and sends findings back as contextual updates on the same
-socket.
+monitor socket, so this connects to it from your process with your workspace
+key, reads the transcript, and sends findings back as contextual updates on the
+same socket.
 
 Two differences from LiveKit, which the client reports rather than hides.
 Contextual updates are documented as non-interrupting, so a finding shapes the
 next turn. And the socket carries events, not audio, which suits a client that
 reads what was said and does not analyse the audio itself.
+
+### Or let DeepTrust hold the socket
+
+If the workspace is connected in the dashboard, you do not need `Monitor` or an
+ElevenLabs key here at all. DeepTrust finds live calls on its own. When your
+backend already knows a conversation id, for instance from the
+`conversation_initiation_metadata` client event, hand it over and the call is
+watched from its first turn instead of from the next check:
+
+```python
+from deeptrust.agents import DeepTrust
+
+await DeepTrust().watch(conversation_id)          # platform="elevenlabs"
+```
+
+`watch` returns `True` when it started the monitor and `False` when DeepTrust
+was already watching. It raises `ServiceError` with status 404 when the
+platform is not connected for your organisation.
 
 ## Your own stack
 
@@ -123,15 +164,26 @@ your agent takes instructions.
 
 ## Keys
 
-Keys are created per organisation in the DeepTrust dashboard. Analysis and
-enforcement are separate scopes, so a team piloting analysis is not holding a
-key that can block their production calls. When a key lacks a scope, the client
-says which scope is missing and which the key holds.
+Keys are created per organisation in the DeepTrust dashboard, under Settings
+and then API Keys (the tab is offered to voice-agent organisations). A key
+belongs to the organisation rather than to the person who made it, so it keeps
+working when they leave, and it reaches the agent endpoints and nothing else.
+
+The same key authenticates the hosted path's call-start webhook, so a workspace
+connected through Settings, Voice Agents needs no second credential.
+
+The API does not divide keys by scope today. When it does, the client already
+reports which scope was missing and which the key holds, rather than a bare
+403.
 
 ```bash
 export DEEPTRUST_API_KEY=...
 export DEEPTRUST_BASE_URL=...   # optional, for a non-production workspace
 ```
+
+The key is sent as `X-DeepTrust-Api-Key`. The default base URL is
+`https://app.deeptrust.ai/api/v1`; a `DEEPTRUST_BASE_URL` from 0.0.1 that ends
+in `/api` needs `/v1` appended.
 
 ## Development
 
@@ -162,8 +214,14 @@ Point a client at it with `DEEPTRUST_BASE_URL`.
 
 ## Status
 
-`0.0.1`, first release. `analyze` and both adapters work. `check` is defined
-and raises `NotImplementedError`. The shapes in `deeptrust.types` are the part
-most likely to move.
+`0.0.2`. `analyze`, `end`, `watch` and both adapters work against the hosted
+API. `check` is defined and raises `NotImplementedError`. The shapes in
+`deeptrust.types` are the part most likely to move.
+
+Changes since 0.0.1: the key travels in `X-DeepTrust-Api-Key` (the bearer form
+is still sent, and goes away in 0.1); the default base URL gained `/v1`; the
+ElevenLabs adapter sends contextual updates in the monitor socket's command
+envelope, which 0.0.1 got wrong, so its nudges never arrived; `Session.end`
+and `DeepTrust.watch` are new.
 
 Apache 2.0.

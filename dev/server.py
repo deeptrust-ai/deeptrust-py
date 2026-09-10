@@ -1,8 +1,9 @@
 """A local stand-in for the DeepTrust API, for developing against this client.
 
-Implements POST /agents/analyze with the same request and response shapes the
-hosted API uses, so the client, both adapters and the examples can be run end
-to end with no key and no network.
+Implements POST /agents/analyze, POST /agents/sessions/{id}/end and
+POST /agents/conversations/{id}/watch with the same request and response
+shapes the hosted API uses, so the client, both adapters and the examples can
+be run end to end with no key and no network.
 
 What it is NOT is the analysis. The hosted API runs a reasoning model against
 an organisation's runbook, SOPs and controls. This matches a handful of
@@ -149,6 +150,31 @@ def analyze(req: AnalyzeReq) -> dict[str, Any]:
         "reasoning": None,
         "latency_ms": round((time.perf_counter() - t0) * 1000, 2),
     }
+
+
+_ENDED: set[str] = set()
+_WATCHED: set[str] = set()
+
+
+class WatchReq(BaseModel):
+    platform: str = "elevenlabs"
+    agent_id: str | None = None
+
+
+@app.post("/agents/sessions/{session_id}/end")
+def end_session(session_id: str) -> dict[str, Any]:
+    already = session_id in _ENDED
+    _ENDED.add(session_id)
+    return {"session_id": session_id, "ended": True, "already_ended": already}
+
+
+@app.post("/agents/conversations/{conversation_id}/watch", status_code=202)
+def watch_conversation(conversation_id: str, req: WatchReq) -> dict[str, Any]:
+    """The hosted handoff. Here it only remembers the id; the real API starts
+    a monitor from its own side, which this server has no socket for."""
+    started = conversation_id not in _WATCHED
+    _WATCHED.add(conversation_id)
+    return {"conversation_id": conversation_id, "watching": True, "started": started}
 
 
 @app.get("/health")

@@ -19,6 +19,11 @@ sends nudges back as contextual updates on the same socket.
     uv run python main.py serve
         Point the ElevenLabs conversation initiation webhook at
         http://<host>/calls and every inbound call is watched automatically.
+
+    uv run python main.py handoff <conversation_id>
+        The hosted path. If the workspace is connected in the DeepTrust
+        dashboard, this needs no ElevenLabs key: DeepTrust holds the monitor
+        socket itself, and this only tells it which conversation to watch.
 """
 
 import asyncio
@@ -200,6 +205,24 @@ async def talk(turns: list[str]) -> None:
                 break
 
 
+async def handoff(conversation_id: str) -> None:
+    """Hand the conversation to DeepTrust's own monitor.
+
+    The workspace must be connected in the dashboard (Settings, Voice Agents).
+    DeepTrust would find the call on its next check anyway; the handoff only
+    makes it immediate.
+    """
+    dt = DeepTrust()
+    try:
+        started = await dt.watch(conversation_id)
+    finally:
+        await dt.aclose()
+    print(
+        f"{'watching' if started else 'already watching'} {conversation_id} (hosted)",
+        flush=True,
+    )
+
+
 def serve() -> None:
     """The webhook receiver, for watching every call without being told."""
     import uvicorn
@@ -233,6 +256,8 @@ if __name__ == "__main__":
         asyncio.run(watch_one(sys.argv[2]))
     elif command == "serve":
         serve()
+    elif command == "handoff" and len(sys.argv) > 2:
+        asyncio.run(handoff(sys.argv[2]))
     else:
         print(__doc__)
         raise SystemExit(1)

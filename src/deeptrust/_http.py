@@ -1,8 +1,12 @@
 """HTTP transport for the DeepTrust API.
 
-Holds the base URL, the bearer token and the retry policy, and turns error
+Holds the base URL, the API key and the retry policy, and turns error
 responses into the exception types in `errors`. Nothing in this module knows
 what an analysis or a verdict is.
+
+The key travels in `X-DeepTrust-Api-Key`, which is the header the agent
+endpoints read. It is also sent as a bearer token for one release, so a client
+pinned to an older server keeps working; the bearer form goes away in 0.1.
 """
 
 from __future__ import annotations
@@ -64,7 +68,7 @@ class Http:
         # it twice.
         self.max_retries = max_retries
 
-    async def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         last: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -91,24 +95,18 @@ class Http:
             body: dict[str, Any] = r.json()
             return body
 
-        detail = ""
-        payload: dict[str, Any] = {}
-        try:
-            payload = r.json()
-            detail = str(payload.get("detail") or payload.get("message") or "")
-        except Exception:
-            detail = r.text[:300]
+        detail, fields = _read_error(r)
 
         # 401 and 403 both mean the key was refused, and the reason decides
         # what the caller can do about it. A missing scope is fixed on the key,
         # a missing entitlement is not fixable by the caller at all, and
         # anything else means the key itself is wrong.
         if r.status_code in (401, 403):
-            code = str(payload.get("code") or "")
+            code = str(fields.get("code") or "")
             if code == "missing_scope":
                 raise ScopeError(
-                    needed=str(payload.get("needed") or "this operation"),
-                    held=payload.get("scopes") or [],
+                    needed=str(fields.get("needed") or "this operation"),
+                    held=fields.get("scopes") or [],
                 )
             if code == "not_entitled":
                 raise EntitlementError(
@@ -126,3 +124,28 @@ class Http:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+def _read_error(r: httpx.Response) -> tuple[str, dict[str, Any]]:
+    """The message and the structured fields of an error response.
+
+    FastAPI puts whatever the server raised under `detail`. That is a string
+    for a plain refusal and a dict for a coded one, so a `code` may sit either
+    at the top level or inside `detail`; both are read. A body that is not JSON
+    is quoted as the message, truncated.
+    """
+    try:
+        payload = r.json()
+    except Exception:
+        return r.text[:300], {}
+    if not isinstance(payload, dict):
+        return str(payload)[:300], {}
+
+    detail = payload.get("detail")
+    fields: dict[str, Any] = dict(payload)
+    if isinstance(detail, dict):
+        fields.update(detail)
+        message = detail.get("message") or detail.get("detail") or detail.get("error")
+    else:
+        message = detail or payload.get("message") or payload.get("error")
+    return str(message or ""), fields

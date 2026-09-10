@@ -3,6 +3,8 @@
 The session accumulates turns locally and submits the transcript when
 `analyze` is called. Results are not stored on the session: each call to
 `analyze` returns its own `Analysis`, and the full record lives server-side.
+`end` closes the call so post-call processing starts now rather than after
+the server's inactivity timeout.
 """
 
 from __future__ import annotations
@@ -137,6 +139,20 @@ class Session:
             latency_ms=round((time.perf_counter() - t0) * 1000, 2),
             raw=d,
         )
+
+    async def end(self) -> bool:
+        """Tell DeepTrust the call is over.
+
+        Post-call processing starts at once instead of after the server's
+        inactivity timeout, so the record is complete minutes sooner. Returns
+        True when this request ended the call and False when it was already
+        ended, or when nothing was ever analyzed (there is no call to end).
+        Calling it twice is harmless.
+        """
+        if not self.id:
+            return False
+        d = await self._http.post(f"/agents/sessions/{self.id}/end")
+        return bool(d.get("ended")) and not bool(d.get("already_ended"))
 
     # ── the action plane ─────────────────────────────────────────────────────
 

@@ -12,10 +12,10 @@ import httpx
 import respx
 
 from deeptrust.agents import DeepTrust
-from deeptrust.agents.elevenlabs import _read_turn
+from deeptrust.agents.elevenlabs import Monitor, _read_turn, contextual_update_command
 from deeptrust.agents.livekit import attach
 
-BASE = "https://example.test/api"
+BASE = "https://example.test/api/v1"
 
 ONE_NUDGE = {
     "session_id": "sess_1",
@@ -148,3 +148,99 @@ def test_elevenlabs_event_reader() -> None:
     assert _read_turn({"type": "audio"}) == ("", "")
     assert _read_turn({"type": "interruption"}) == ("", "")
     assert _read_turn({}) == ("", "")
+
+
+def test_elevenlabs_contextual_update_is_a_monitor_command() -> None:
+    """The monitor socket takes commands; the `{"type": ...}` shape of the
+    main socket is silently ignored there, which is how 0.0.1 delivered
+    nothing."""
+    assert contextual_update_command("hold the line") == {
+        "command_type": "contextual_update",
+        "parameters": {"contextual_update": "hold the line"},
+    }
+
+
+class FakeMonitorSocket:
+    """A monitor socket that replays scripted events and records sends."""
+
+    def __init__(self, events: list[dict[str, Any]]) -> None:
+        self._events = events
+        self.sent: list[dict[str, Any]] = []
+        self.url: str | None = None
+        self.headers: dict[str, str] | None = None
+
+    def __call__(
+        self, url: str, *, additional_headers: dict[str, str]
+    ) -> FakeMonitorSocket:
+        self.url = url
+        self.headers = additional_headers
+        return self
+
+    async def __aenter__(self) -> FakeMonitorSocket:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    def __aiter__(self) -> FakeMonitorSocket:
+        return self
+
+    async def __anext__(self) -> str:
+        import json
+
+        if not self._events:
+            raise StopAsyncIteration
+        return json.dumps(self._events.pop(0))
+
+    async def send(self, raw: str) -> None:
+        import json
+
+        self.sent.append(json.loads(raw))
+
+
+@respx.mock
+async def test_elevenlabs_monitor_sends_nudges_in_the_command_envelope() -> None:
+    import asyncio
+
+    route = respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ONE_NUDGE)
+    )
+    socket = FakeMonitorSocket(
+        [
+            {
+                "type": "agent_response",
+                "agent_response_event": {"agent_response": "IT desk, how can I help?"},
+            },
+            {
+                "type": "user_transcript",
+                "user_transcription_event": {
+                    "user_transcript": "my colleague is telling me what to say"
+                },
+            },
+            {"type": "audio"},
+        ]
+    )
+    dt = DeepTrust(api_key="dt_test", base_url=BASE)
+    monitor = Monitor(dt, api_key="xi_test", connect=socket)
+
+    await monitor.watch("conv_1")
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if "conv_1" not in monitor._watching:
+            break
+
+    assert socket.url == "wss://api.elevenlabs.io/v1/convai/conversations/conv_1/monitor"
+    assert socket.headers == {"xi-api-key": "xi_test"}
+    # One job, for the one caller turn; the agent turn and the audio frame cost nothing.
+    assert route.call_count == 1
+    assert socket.sent == [
+        {
+            "command_type": "contextual_update",
+            "parameters": {
+                "contextual_update": (
+                    "The caller referred to someone else on the line. "
+                    "Ask one question and wait: is anyone helping them right now?"
+                )
+            },
+        }
+    ]

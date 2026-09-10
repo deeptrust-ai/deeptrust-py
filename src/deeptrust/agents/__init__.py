@@ -13,11 +13,16 @@
         ...
 
 `Session.analyze` reviews the transcript and returns findings, and does not
-block the agent. `Session.check` decides whether a single action may run and
-does block; it is not implemented in this version.
+block the agent. `Session.end` closes the call. `Session.check` decides
+whether a single action may run and does block; it is not implemented in this
+version.
 
 Adapters for LiveKit and ElevenLabs are in `deeptrust.agents.livekit` and
 `deeptrust.agents.elevenlabs`, and wire both ends up for you.
+
+`DeepTrust.watch` is for the hosted path: an organisation that connected its
+ElevenLabs workspace in the DeepTrust dashboard can hand a live conversation
+id to DeepTrust, which then holds the monitor socket itself.
 """
 
 from __future__ import annotations
@@ -90,6 +95,33 @@ class DeepTrust:
             platform=platform,
             metadata=metadata or {},
         )
+
+    async def watch(
+        self,
+        conversation_id: str,
+        *,
+        platform: str = "elevenlabs",
+        agent_id: str | None = None,
+    ) -> bool:
+        """Hand a live platform conversation to DeepTrust to monitor.
+
+        For the hosted path. The organisation must have connected `platform` in
+        the DeepTrust dashboard (Settings, Voice Agents); DeepTrust then opens
+        the monitor socket from its own side, so no platform key is needed
+        here. Call it as soon as the conversation id is known, for instance
+        from the `conversation_initiation_metadata` client event, and the
+        call is watched from its first turn instead of from the next poll.
+
+        Returns True when this request started the monitor and False when
+        DeepTrust was already watching the conversation. Raises `ServiceError`
+        with status 404 when the platform is not connected for the
+        organisation.
+        """
+        d = await self._http.post(
+            f"/agents/conversations/{conversation_id}/watch",
+            {"platform": platform, "agent_id": agent_id},
+        )
+        return bool(d.get("started"))
 
     async def aclose(self) -> None:
         await self._http.aclose()
