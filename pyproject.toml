@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "DeepTrust", email = "engineering@deeptrust.ai" }]
-keywords = ["voice", "agents", "livekit", "elevenlabs", "observability", "security"]
+keywords = ["voice", "agents", "livekit", "elevenlabs", "vapi", "observability", "security"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -27,6 +27,7 @@ Issues = "https://github.com/deeptrust-ai/deeptrust-python/issues"
 # integrating their own stack should not be made to install a platform SDK.
 livekit = ["livekit-agents>=1.7"]
 elevenlabs = ["websockets>=13"]
+# No vapi extra: that adapter is webhooks in and HTTPS out, which httpx covers.
 
 [build-system]
 requires = ["hatchling"]
@@ -66,6 +67,10 @@ files = ["src"]
 # The adapters touch third-party objects whose types we do not control, and
 # pinning ourselves to their internals would break on their next release.
 [[tool.mypy.overrides]]
-module = ["deeptrust.agents.livekit", "deeptrust.agents.elevenlabs"]
+module = [
+  "deeptrust.agents.livekit",
+  "deeptrust.agents.elevenlabs",
+  "deeptrust.agents.vapi",
+]
 disallow_any_explicit = false
 warn_return_any = false

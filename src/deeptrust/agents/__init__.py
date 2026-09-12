@@ -17,8 +17,9 @@ block the agent. `Session.end` closes the call. `Session.check` decides
 whether a single action may run and does block; it is not implemented in this
 version.
 
-Adapters for LiveKit and ElevenLabs are in `deeptrust.agents.livekit` and
-`deeptrust.agents.elevenlabs`, and wire both ends up for you.
+Adapters for LiveKit, ElevenLabs and VAPI are in `deeptrust.agents.livekit`,
+`deeptrust.agents.elevenlabs` and `deeptrust.agents.vapi`, and wire both ends
+up for you.
 
 `DeepTrust.watch` is for the hosted path: an organisation that connected its
 ElevenLabs workspace in the DeepTrust dashboard can hand a live conversation
