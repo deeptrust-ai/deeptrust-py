@@ -18,8 +18,8 @@ from deeptrust.agents.vapi import Bridge, _read_turn, add_message_command
 from deeptrust.errors import ConfigError
 
 BASE = "https://example.test/api/v1"
-CONTROL = "https://phone-call-websocket.vapi.test/call_1/control"
-LISTEN = "wss://phone-call-websocket.vapi.test/call_1/transport"
+CONTROL = "https://phone-call-websocket.vapi.ai/call_1/control"
+LISTEN = "wss://phone-call-websocket.vapi.ai/call_1/transport"
 
 ONE_NUDGE = {
     "session_id": "sess_1",
@@ -151,6 +151,70 @@ async def test_vapi_fetches_the_control_url_once_when_the_webhook_lacks_it() -> 
     assert lookup.call_count == 1
     assert lookup.calls.last.request.headers["authorization"] == "Bearer vapi_test"
     assert control.call_count == 2
+
+
+@respx.mock
+async def test_vapi_ignores_a_control_url_that_is_not_vapis() -> None:
+    """The webhook body is input. A control URL in it is posted to, so one that
+    points anywhere but VAPI is dropped and the call's own is fetched."""
+    respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ONE_NUDGE)
+    )
+    control = respx.post(CONTROL).mock(return_value=httpx.Response(200, json={}))
+    elsewhere = respx.post("https://attacker.test/control").mock(
+        return_value=httpx.Response(200)
+    )
+    lookup = respx.get("https://api.vapi.ai/call/call_1").mock(
+        return_value=httpx.Response(200, json=call_object())
+    )
+    bridge = Bridge(DeepTrust(api_key="dt_test", base_url=BASE), api_key="vapi_test")
+
+    payload = transcript("user", "my colleague is telling me what to say")
+    payload["message"]["call"]["monitor"]["controlUrl"] = "https://attacker.test/control"
+    await bridge.handle(payload)
+
+    assert elsewhere.call_count == 0
+    assert lookup.call_count == 1
+    assert control.call_count == 1
+
+
+@respx.mock
+async def test_vapi_lookup_and_delivery_failures_surface() -> None:
+    respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ONE_NUDGE)
+    )
+    lookup = respx.get("https://api.vapi.ai/call/call_1").mock(
+        return_value=httpx.Response(401, json={"message": "Unauthorized"})
+    )
+    bridge = Bridge(DeepTrust(api_key="dt_test", base_url=BASE), api_key="bad")
+
+    # The transcript is analysed before delivery, so the turn is kept even
+    # though the nudge could not be sent.
+    with pytest.raises(httpx.HTTPStatusError):
+        await bridge.handle(
+            transcript("user", "my colleague is telling me", monitor=False)
+        )
+    assert lookup.call_count == 1
+    call = bridge.session("call_1")
+    assert call is not None
+    assert len(call.transcript) == 1
+
+    control = respx.post(CONTROL).mock(return_value=httpx.Response(410))
+    with pytest.raises(httpx.HTTPStatusError):
+        await bridge.handle(transcript("user", "what to say"))
+    assert control.call_count == 1
+
+
+async def test_vapi_aclose_leaves_a_borrowed_client_open() -> None:
+    dt = DeepTrust(api_key="dt_test", base_url=BASE)
+    mine = httpx.AsyncClient()
+    await Bridge(dt, api_key="vapi_test", http=mine).aclose()
+    assert not mine.is_closed
+    await mine.aclose()
+
+    bridge = Bridge(dt, api_key="vapi_test")
+    await bridge.aclose()
+    assert bridge._http.is_closed
 
 
 @respx.mock

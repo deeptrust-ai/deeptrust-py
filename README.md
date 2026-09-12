@@ -190,6 +190,10 @@ fetched once per call with your VAPI key, so an inbound call, which your code
 never created, is nudged the same as an outbound one. The call's `listenUrl` is
 audio and is not used.
 
+The route is yours, so checking that a request came from VAPI is yours too: set
+a server URL secret in VAPI and compare the `x-vapi-secret` header before
+calling `handle`.
+
 ## Your own stack
 
 None of the adapters is required. If your agent is somewhere else, the two

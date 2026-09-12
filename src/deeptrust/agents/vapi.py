@@ -25,9 +25,13 @@ The webhook carries transcript messages, not audio, so nothing here has access
 to the audio stream. The call's `listenUrl` is raw audio and is not used.
 
 The control URL arrives on the call object as `monitor.controlUrl`. It is taken
-from the webhook payload when present, and otherwise fetched from VAPI once per
-call with the API key, so an inbound call, which was never created by your
-code, is nudged the same as an outbound one.
+from the webhook payload when present and on a VAPI host, and otherwise fetched
+from VAPI once per call with the API key, so an inbound call, which was never
+created by your code, is nudged the same as an outbound one.
+
+The webhook route is yours, so checking that a request came from VAPI is yours
+too: set a server URL secret in VAPI and compare the `x-vapi-secret` header
+before calling `handle`. A payload that reaches `handle` is trusted.
 
 No extra is needed: the adapter uses httpx, which the client already depends on.
 """
@@ -45,6 +49,9 @@ from ..types import User
 from . import DeepTrust, Session
 
 API_URL = "https://api.vapi.ai"
+# A control URL from a webhook is posted to, so one that does not point at
+# VAPI is ignored and the call's own is fetched instead.
+CONTROL_HOST_SUFFIX = ".vapi.ai"
 
 
 def add_message_command(text: str) -> dict[str, Any]:
@@ -95,6 +102,7 @@ class Bridge:
         self._key = api_key
         self._deliver = deliver
         self._on_analysis = on_analysis
+        self._own_http = http is None
         self._http = http or httpx.AsyncClient(timeout=10.0)
         self._calls: dict[str, _Call] = {}
 
@@ -124,9 +132,9 @@ class Bridge:
         if state is None:
             state = _Call(self._dt.session(external_id=cid, user=user, platform="vapi"))
             self._calls[cid] = state
-        url = (call.get("monitor") or {}).get("controlUrl")
-        if url:
-            state.control_url = str(url)
+        url = str((call.get("monitor") or {}).get("controlUrl") or "")
+        if url and _is_vapi_url(url):
+            state.control_url = url
 
         if msg.get("type") == "end-of-call-report":
             self._calls.pop(cid, None)
@@ -156,7 +164,10 @@ class Bridge:
         return state.session if state else None
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        """Close the HTTP client, if the bridge created it. A client passed in
+        stays open, since its owner may still be using it."""
+        if self._own_http:
+            await self._http.aclose()
 
     async def _control(self, state: _Call, cid: str, command: dict[str, Any]) -> None:
         async with state.lock:
@@ -175,6 +186,11 @@ class Bridge:
         r.raise_for_status()
         monitor = r.json().get("monitor") or {}
         return str(monitor.get("controlUrl") or "")
+
+
+def _is_vapi_url(url: str) -> bool:
+    u = httpx.URL(url)
+    return u.scheme == "https" and u.host.endswith(CONTROL_HOST_SUFFIX)
 
 
 def _read_turn(msg: dict[str, Any]) -> tuple[str, str]:
