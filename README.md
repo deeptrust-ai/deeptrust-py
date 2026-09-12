@@ -156,11 +156,49 @@ await DeepTrust().watch(conversation_id)          # platform="elevenlabs"
 was already watching. It raises `ServiceError` with status 404 when the
 platform is not connected for your organisation.
 
+## VAPI
+
+No extra to install: the adapter is webhooks in and HTTPS out, and the client
+already depends on httpx.
+
+```python
+from deeptrust.agents import DeepTrust
+from deeptrust.agents.vapi import Bridge
+
+bridge = Bridge(DeepTrust(), api_key=os.environ["VAPI_API_KEY"])
+
+@app.post("/vapi/webhook")
+async def vapi_webhook(payload: dict):
+    await bridge.handle(payload, user=caller)
+    return {}
+```
+
+Nothing here holds a connection. VAPI posts server messages to your server URL
+as the call happens, so the adapter is a handler you call from your own webhook
+route. It reads final transcripts out of those messages, runs a job when the
+caller says something new, and sends the nudge back by posting to the call's
+control URL. Route every VAPI message to it: anything that is not a final
+transcript or the end-of-call report is ignored, and the report ends the
+DeepTrust call so post-call processing starts at once.
+
+The nudge is an `add-message` with `triggerResponseEnabled`, so the agent acts
+on it immediately rather than on its next turn. That is closer to LiveKit's
+interrupt than to ElevenLabs' contextual update.
+
+The control URL is read from the webhook when VAPI includes it, and otherwise
+fetched once per call with your VAPI key, so an inbound call, which your code
+never created, is nudged the same as an outbound one. The call's `listenUrl` is
+audio and is not used.
+
+The route is yours, so checking that a request came from VAPI is yours too: set
+a server URL secret in VAPI and compare the `x-vapi-secret` header before
+calling `handle`.
+
 ## Your own stack
 
-Neither adapter is required. If your agent is somewhere else, the two verbs are
-the whole interface: append turns, call `analyze`, deliver the nudge however
-your agent takes instructions.
+None of the adapters is required. If your agent is somewhere else, the two
+verbs are the whole interface: append turns, call `analyze`, deliver the nudge
+however your agent takes instructions.
 
 ## Keys
 
@@ -197,8 +235,8 @@ virtualenv to activate. `just` on its own lists the rest.
 
 ## Local development
 
-`dev/server.py` is a local stand-in for the API, so this client, both adapters
-and both examples run with no key and no network:
+`dev/server.py` is a local stand-in for the API, so this client, the adapters
+and the examples run with no key and no network:
 
 ```bash
 just devserver     # http://127.0.0.1:8080
@@ -214,7 +252,7 @@ Point a client at it with `DEEPTRUST_BASE_URL`.
 
 ## Status
 
-`0.0.1`, the first release. `analyze`, `end`, `watch` and both adapters work
+`0.0.1`, the first release. `analyze`, `end`, `watch` and the adapters work
 against the hosted API. `check` is defined and raises `NotImplementedError`.
 The shapes in `deeptrust.types` are the part most likely to move.
 
