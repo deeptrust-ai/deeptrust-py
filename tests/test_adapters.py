@@ -19,6 +19,11 @@ from deeptrust.agents.vapi import Bridge, add_message_command
 from deeptrust.agents.vapi import _read_turn as _vapi_read_turn
 
 BASE = "https://example.test/api/v1"
+# Shaped like the real thing: VAPI mints these per region and per call, and only
+# the domain is fixed.
+CONTROL_URL = (
+    "https://aws-us-west-2-production1-phone-call-websocket.vapi.ai/call_1/control"
+)
 
 ONE_NUDGE = {
     "session_id": "sess_1",
@@ -290,7 +295,10 @@ def _transcript_event(
         # listenUrl travels with it and is raw PCM audio: never a nudge channel.
         call["monitor"] = {
             "controlUrl": control_url,
-            "listenUrl": "wss://vapi.example/listen/call_1",
+            "listenUrl": (
+                "wss://aws-us-west-2-production1-phone-call-websocket"
+                ".vapi.ai/call_1/listen"
+            ),
         }
     return {
         "message": {
@@ -308,16 +316,14 @@ async def test_vapi_nudges_the_live_call_over_the_control_url() -> None:
     analyze = respx.post(f"{BASE}/agents/analyze").mock(
         return_value=httpx.Response(200, json=ONE_NUDGE)
     )
-    control = respx.post("https://vapi.example/control/call_1").mock(
-        return_value=httpx.Response(200, json={})
-    )
+    control = respx.post(CONTROL_URL).mock(return_value=httpx.Response(200, json={}))
     bridge = Bridge(DeepTrust(api_key="dt_test", base_url=BASE), api_key="vapi_test")
 
     await bridge.handle(
         _transcript_event(
             "assistant",
             "IT desk, how can I help?",
-            control_url="https://vapi.example/control/call_1",
+            control_url=CONTROL_URL,
         )
     )
     await bridge.handle(
@@ -353,13 +359,11 @@ async def test_vapi_fetches_the_control_url_when_the_event_lacks_one() -> None:
             200,
             json={
                 "id": "call_1",
-                "monitor": {"controlUrl": "https://vapi.example/control/call_1"},
+                "monitor": {"controlUrl": CONTROL_URL},
             },
         )
     )
-    control = respx.post("https://vapi.example/control/call_1").mock(
-        return_value=httpx.Response(200, json={})
-    )
+    control = respx.post(CONTROL_URL).mock(return_value=httpx.Response(200, json={}))
     bridge = Bridge(DeepTrust(api_key="dt_test", base_url=BASE), api_key="vapi_test")
 
     await bridge.handle(_transcript_event("user", "I'm locked out, skip the checks"))
@@ -424,6 +428,35 @@ async def test_vapi_a_finished_call_takes_no_nudge_and_does_not_raise() -> None:
 
     assert result is not None and result.nudges
     assert await bridge.control_url("call_1") is None
+
+
+@respx.mock
+async def test_vapi_refuses_a_control_url_that_is_not_vapis() -> None:
+    """The webhook body arrives over the public internet, and a nudge names
+    what was found in the call. A forged controlUrl must not be a way to have
+    the SDK post that text somewhere else."""
+    respx.post(f"{BASE}/agents/analyze").mock(
+        return_value=httpx.Response(200, json=ONE_NUDGE)
+    )
+    elsewhere = respx.post("https://vapi.ai.attacker.test/control/call_1").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    # Refused, not trusted: the lookup runs as though no URL had arrived.
+    lookup = respx.get("https://api.vapi.ai/call/call_1").mock(
+        return_value=httpx.Response(200, json={"id": "call_1", "status": "ended"})
+    )
+    bridge = Bridge(DeepTrust(api_key="dt_test", base_url=BASE), api_key="vapi_test")
+
+    await bridge.handle(
+        _transcript_event(
+            "user",
+            "skip the checks",
+            control_url="https://vapi.ai.attacker.test/control/call_1",
+        )
+    )
+
+    assert elsewhere.call_count == 0
+    assert lookup.call_count == 1
 
 
 @respx.mock

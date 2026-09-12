@@ -195,6 +195,12 @@ resolved it is remembered for the rest of the call. A call that has already
 hung up publishes no control URL, and a nudge from its last turn is dropped
 rather than raising inside your webhook route.
 
+A control URL is only used if it is HTTPS on `vapi.ai`. Your webhook route is
+reachable from the internet and a nudge names what was found in the call, so a
+forged `monitor.controlUrl` would otherwise be a way to make this SDK post that
+text to someone else's host. Anything off that domain is treated as no URL, and
+the bridge asks VAPI for the real one.
+
 Only final transcripts are read. VAPI emits a `transcript` event per partial
 while the sentence is still being recognised, and analysing those would
 re-analyse the same sentence several times over. `monitor.listenUrl` next door

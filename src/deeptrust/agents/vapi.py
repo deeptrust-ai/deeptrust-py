@@ -35,6 +35,13 @@ adapter that assumed one would work for outbound calls only.
 `monitor.listenUrl` sits next to it and is deliberately ignored: it is a raw
 PCM audio stream, not a channel anything can be sent on.
 
+A control URL is only accepted if it is HTTPS on VAPI's own domain. The webhook
+body is attacker-reachable in the general case -- it arrives over the public
+internet at your route -- and a nudge names what DeepTrust found in the call, so
+a forged `monitor.controlUrl` would be a way to have this SDK post that text to
+a host of someone else's choosing. Anything off `vapi.ai` reads as no control
+URL rather than as an error.
+
 Only final transcripts are read. VAPI emits a `transcript` event per partial as
 the sentence is still being recognised, and analysing those re-analyses the
 same sentence several times -- the same class of bug the LiveKit adapter's
@@ -51,6 +58,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -60,6 +68,9 @@ from . import DeepTrust
 from ._session import Session
 
 API_BASE_URL = "https://api.vapi.ai"
+
+#: The only domain a control URL may point at.
+CONTROL_URL_DOMAIN = "vapi.ai"
 
 
 def add_message_command(text: str) -> dict[str, Any]:
@@ -191,7 +202,10 @@ class Bridge:
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._key}"},
         ) as client:
-            response = await client.get(f"/call/{call_id}")
+            # Quoted: the id comes off a webhook body, and a raw `/` or `?` in
+            # it would address a different endpoint of the API than the call
+            # lookup.
+            response = await client.get(f"/call/{quote(call_id, safe='')}")
         if not response.is_success:
             return None
 
@@ -255,4 +269,24 @@ def _monitor_control_url(call: dict[str, Any]) -> str | None:
     if not isinstance(monitor, dict):
         return None
     url = monitor.get("controlUrl")
-    return url if isinstance(url, str) and url else None
+    if not isinstance(url, str) or not url:
+        return None
+    return url if _is_vapi_control_url(url) else None
+
+
+def _is_vapi_control_url(url: str) -> bool:
+    """Whether a URL is one VAPI could have minted: HTTPS, on `vapi.ai`.
+
+    The check is on the host rather than the full URL because VAPI mints these
+    per region and per call -- the path and the subdomain both vary -- while
+    the domain is the part that says the destination is VAPI and not somewhere
+    a forged webhook pointed us.
+    """
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host == CONTROL_URL_DOMAIN or host.endswith(f".{CONTROL_URL_DOMAIN}")
