@@ -214,14 +214,11 @@ Point a client at it with `DEEPTRUST_BASE_URL`.
 
 ## Status
 
-`0.0.2`. `analyze`, `end`, `watch` and both adapters work against the hosted
-API. `check` is defined and raises `NotImplementedError`. The shapes in
-`deeptrust.types` are the part most likely to move.
+`0.0.1`, the first release. `analyze`, `end`, `watch` and both adapters work
+against the hosted API. `check` is defined and raises `NotImplementedError`.
+The shapes in `deeptrust.types` are the part most likely to move.
 
-Changes since 0.0.1: the key travels in `X-DeepTrust-Api-Key` (the bearer form
-is still sent, and goes away in 0.1); the default base URL gained `/v1`; the
-ElevenLabs adapter sends contextual updates in the monitor socket's command
-envelope, which 0.0.1 got wrong, so its nudges never arrived; `Session.end`
-and `DeepTrust.watch` are new.
+The key travels in `X-DeepTrust-Api-Key`; the bearer form is still sent and
+goes away in 0.1.
 
 Apache 2.0.
